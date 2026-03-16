@@ -14,10 +14,10 @@ Single-page interface for importing parishioner data, calculating anniversaries,
 
 ## Setup
 
-### 1. Clone / enter the project
+### 1. Clone / enter the Django app folder
 
 ```bash
-cd Nenki_opus
+cd Nenki_opus/memorial_django
 ```
 
 ### 2. Install dependencies
@@ -47,7 +47,7 @@ pip install django python-docx reportlab pandas openpyxl
 python manage.py migrate
 ```
 
-This creates `memorial_web.db` (SQLite) in the project root.
+This creates `memorial_web.db` (SQLite) inside `memorial_django/`.
 
 ### 4. Run the development server
 
@@ -63,25 +63,30 @@ Open **http://127.0.0.1:8000** in your browser.
 
 ```
 Nenki_opus/
-├── manage.py
-├── memorial_web.db              ← SQLite database (auto-created)
-├── nenki_web/                   ← Django project config
-│   ├── settings.py
-│   └── urls.py
-└── memorial/                    ← Main app
-    ├── models.py                ← Person + Attribute (EAV)
-    ├── views.py                 ← All API endpoints + page view
-    ├── urls.py
-    ├── services/
-    │   ├── era_converter.py     ← 元号 ↔ Gregorian conversion
-    │   ├── date_converter.py    ← Kanji number/era formatting
-    │   ├── japanese_date_parser.py  ← Multi-format date parser
-    │   ├── nenki_calculator.py  ← Anniversary calculation engine
-    │   ├── importer.py          ← Excel/CSV import + column detection
-    │   └── document_generator.py    ← Word + PDF output
-    └── templates/memorial/
-        └── index.html           ← Single-page app template
+├── memorial_app/                ← Desktop app (PySide6, standalone)
+│   └── ...
+└── memorial_django/             ← Django web app (this app)
+    ├── manage.py
+    ├── memorial_web.db          ← SQLite database (auto-created)
+    ├── nenki_web/               ← Django project config
+    │   ├── settings.py
+    │   └── urls.py
+    └── memorial/                ← Main Django app
+        ├── models.py            ← Person + Attribute (EAV)
+        ├── views.py             ← All API endpoints + page view
+        ├── urls.py
+        ├── services/
+        │   ├── era_converter.py         ← 元号 ↔ Gregorian conversion
+        │   ├── date_converter.py        ← Kanji number/era formatting
+        │   ├── japanese_date_parser.py  ← Multi-format date parser
+        │   ├── nenki_calculator.py      ← Anniversary calculation engine
+        │   ├── importer.py              ← Excel/CSV import + column detection
+        │   └── document_generator.py   ← Word + PDF output
+        └── templates/memorial/
+            └── index.html               ← Single-page app template
 ```
+
+> The two apps are fully independent — `memorial_app` (desktop) and `memorial_django` (web) do not share a database or code at runtime.
 
 ---
 
@@ -283,6 +288,7 @@ pip install openpyxl
 
 **`OperationalError: no such table`**
 ```bash
+cd Nenki_opus/memorial_django
 python manage.py migrate
 ```
 
@@ -290,4 +296,11 @@ python manage.py migrate
 ```bash
 python manage.py runserver 8080
 # then open http://127.0.0.1:8080
+```
+
+**`manage.py: No such file or directory`**
+- Make sure you are inside the `memorial_django/` folder, not the repo root:
+```bash
+cd Nenki_opus/memorial_django
+python manage.py runserver
 ```
