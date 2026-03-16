@@ -29,6 +29,8 @@ class ColumnMapping:
     day_col: str | None = None
     # All other columns become dynamic attributes
     extra_cols: list[str] = field(default_factory=list)
+    # Remap extra column names: {excel_col_name: db_col_name}
+    column_remap: dict[str, str] = field(default_factory=dict)
 
     @property
     def uses_split_date(self) -> bool:

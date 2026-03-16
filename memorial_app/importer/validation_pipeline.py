@@ -128,17 +128,24 @@ class ValidationPipeline:
             return parse_date(val)
 
     def _build_attributes(self, row: pd.Series) -> dict[str, str]:
-        """Build dynamic attributes from extra columns + buddhist name."""
+        """Build dynamic attributes from extra columns + buddhist name.
+
+        Applies column_remap to rename Excel columns to existing DB column names,
+        avoiding redundant columns with different names but same data.
+        """
+        remap = self.mapping.column_remap
         attrs = {}
         if self.mapping.buddhist_name_col:
             val = str(row.get(self.mapping.buddhist_name_col, "")).strip()
             if val:
-                attrs[self.mapping.buddhist_name_col] = val
+                target = remap.get(self.mapping.buddhist_name_col, self.mapping.buddhist_name_col)
+                attrs[target] = val
 
         for col in self.mapping.extra_cols:
             val = str(row.get(col, "")).strip()
             if val:
-                attrs[col] = val
+                target = remap.get(col, col)
+                attrs[target] = val
         return attrs
 
 
