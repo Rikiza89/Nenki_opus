@@ -376,6 +376,8 @@ class WordGenerator:
             subtitle_run.font.name = self.FONT_NAME
             subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
             subtitle.paragraph_format.space_after = Pt(8)
+            # Keep subtitle with its first entry — never orphan at column bottom
+            subtitle.paragraph_format.keep_with_next = True
 
             for entry in people_data:
                 text = self.FIELD_SEP + self._format_aligned_entry(entry, field_widths)
@@ -383,7 +385,7 @@ class WordGenerator:
                 run = para.add_run(text)
                 run.font.size = Pt(11)
                 run.font.name = self.FONT_NAME
-                para.paragraph_format.left_indent = Inches(0.5)
+                para.paragraph_format.left_indent = Inches(0.3)
                 para.paragraph_format.space_after = Pt(4)
 
             # Space between groups
