@@ -120,27 +120,29 @@ class WordGenerator:
         title_para.paragraph_format.space_after = Pt(4)
 
     def _add_textbox_title(self, doc: Document, title: str):
-        """Add title as a floating tategaki text box spanning full page width.
+        """Add title as a floating vertical text box on the right side.
 
-        The text box is anchored at the top of the margin area with
-        'top and bottom' wrapping so the 2-column data flows below it.
+        In tategaki layout, 'right side' is where reading starts.
+        The text box is tall (full page height) and narrow, positioned
+        at the right margin. Columns wrap to its left.
         """
         para = doc.add_paragraph()
         run = para.add_run()
 
         # --- Build the DrawingML anchor with a WordprocessingShape text box ---
 
-        # Usable dimensions (page minus margins)
         # Landscape A4: 11.69" x 8.27", margins 0.5" each side
-        usable_w = int(10.69 * 914400)  # EMU (width in landscape = physical width - margins)
-        title_h = int(0.75 * 914400)     # EMU — text box height (~0.75 inch)
+        # Usable: 10.69" wide x 7.27" tall
+        title_w = int(0.85 * 914400)      # EMU — narrow text box width
+        usable_h = int(7.27 * 914400)     # EMU — full usable height
 
         drawing = OxmlElement('w:drawing')
 
         # wp:anchor — floating positioning
         anchor = OxmlElement('wp:anchor')
         for attr, val in [
-            ('distT', '0'), ('distB', '0'), ('distL', '0'), ('distR', '0'),
+            ('distT', '0'), ('distB', '0'),
+            ('distL', '114300'), ('distR', '114300'),  # ~0.125" gap from columns
             ('simplePos', '0'), ('relativeHeight', '251659264'),
             ('behindDoc', '0'), ('locked', '0'),
             ('layoutInCell', '1'), ('allowOverlap', '1'),
@@ -153,11 +155,11 @@ class WordGenerator:
         simplePos.set('y', '0')
         anchor.append(simplePos)
 
-        # Horizontal: centered relative to margin
+        # Horizontal: right side of margin
         posH = OxmlElement('wp:positionH')
         posH.set('relativeFrom', 'margin')
         align_h = OxmlElement('wp:align')
-        align_h.text = 'center'
+        align_h.text = 'right'
         posH.append(align_h)
         anchor.append(posH)
 
@@ -169,10 +171,10 @@ class WordGenerator:
         posV.append(offset_v)
         anchor.append(posV)
 
-        # Extent (size)
+        # Extent (size) — narrow and tall
         extent = OxmlElement('wp:extent')
-        extent.set('cx', str(usable_w))
-        extent.set('cy', str(title_h))
+        extent.set('cx', str(title_w))
+        extent.set('cy', str(usable_h))
         anchor.append(extent)
 
         # Effect extent
@@ -181,8 +183,10 @@ class WordGenerator:
             effectExtent.set(attr, '0')
         anchor.append(effectExtent)
 
-        # Wrap: top and bottom — columns flow below the text box
-        anchor.append(OxmlElement('wp:wrapTopAndBottom'))
+        # Wrap: square wrapping so columns flow to the left of the text box
+        wrapSquare = OxmlElement('wp:wrapSquare')
+        wrapSquare.set('wrapText', 'left')
+        anchor.append(wrapSquare)
 
         # Document properties
         docPr = OxmlElement('wp:docPr')
@@ -213,8 +217,8 @@ class WordGenerator:
         off.set('y', '0')
         xfrm.append(off)
         ext = OxmlElement('a:ext')
-        ext.set('cx', str(usable_w))
-        ext.set('cy', str(title_h))
+        ext.set('cx', str(title_w))
+        ext.set('cy', str(usable_h))
         xfrm.append(ext)
         spPr.append(xfrm)
 
@@ -272,14 +276,14 @@ class WordGenerator:
         txbx.append(txbxContent)
         wsp.append(txbx)
 
-        # Body properties — tategaki vertical text, centered anchor
+        # Body properties — vertical text (top-to-bottom), centered
         bodyPr = OxmlElement('wps:bodyPr')
         bodyPr.set('vert', 'eaVert')
         bodyPr.set('wrap', 'square')
-        bodyPr.set('lIns', '91440')
-        bodyPr.set('tIns', '45720')
-        bodyPr.set('rIns', '91440')
-        bodyPr.set('bIns', '45720')
+        bodyPr.set('lIns', '45720')
+        bodyPr.set('tIns', '91440')
+        bodyPr.set('rIns', '45720')
+        bodyPr.set('bIns', '91440')
         bodyPr.set('anchor', 'ctr')
         wsp.append(bodyPr)
 
