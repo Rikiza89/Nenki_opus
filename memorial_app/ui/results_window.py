@@ -247,9 +247,16 @@ class ResultsPage(QWidget):
         return fields
 
     def _get_sorted_data_with_fields(self, selected_fields: list[str]):
-        """Build grouped data where each person entry is a list of field values."""
+        """Build grouped data where each person entry is a list of field values.
+
+        The "年忌名" field is excluded from entry rows because it is already
+        displayed once as the group header in the generated document.
+        """
         selected_nenki = {name for name, cb in self.nenki_checks.items() if cb.isChecked()}
         filtered = [r for r in self._results if r[0].name in selected_nenki]
+
+        # Exclude 年忌名 from per-row fields; it appears as group header
+        entry_fields = [f for f in selected_fields if f != "年忌名"]
 
         groups = defaultdict(list)
         for ann, name, attrs, pid in filtered:
@@ -257,7 +264,7 @@ class ResultsPage(QWidget):
             key = f"{ann.name}|{ann.years_offset}|（{death_year_era}没）"
             # Build ordered field values for this person
             entry = []
-            for field in selected_fields:
+            for field in entry_fields:
                 entry.append(_get_field_value(field, ann, name, attrs))
             groups[key].append(entry)
 
@@ -305,6 +312,8 @@ class ResultsPage(QWidget):
         selected_fields = dialog.get_selected_fields()
         single_column = dialog.get_single_column()
         sorted_data = self._get_sorted_data_with_fields(selected_fields)
+        # 年忌名 is shown as group header, not per-row field
+        entry_fields = [f for f in selected_fields if f != "年忌名"]
 
         if not sorted_data:
             QMessageBox.information(self, "情報", "出力するデータがありません。")
@@ -344,7 +353,7 @@ class ResultsPage(QWidget):
                 gen = WordGenerator()
                 gen.create_combined_document(
                     sorted_data, title, Path(path),
-                    field_names=selected_fields, single_column=single_column,
+                    field_names=entry_fields, single_column=single_column,
                 )
                 pdf_path = Path(path).with_suffix(".pdf")
                 if pdf_path.exists():
@@ -359,7 +368,7 @@ class ResultsPage(QWidget):
                 gen = PdfGenerator()
                 gen.create_document(
                     sorted_data, title, Path(path),
-                    field_names=selected_fields, single_column=single_column,
+                    field_names=entry_fields, single_column=single_column,
                 )
                 QMessageBox.information(self, "完了", f"PDFを保存しました:\n{path}")
         except Exception as e:
