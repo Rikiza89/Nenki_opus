@@ -349,6 +349,7 @@ class WordGenerator:
             subtitle_run.font.name = self.FONT_NAME
             subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
             subtitle.paragraph_format.space_after = Pt(12)
+            subtitle.paragraph_format.keep_with_next = True
 
             for entry in people_data:
                 text = self.FIELD_SEP + self._format_aligned_entry(entry, field_widths)
