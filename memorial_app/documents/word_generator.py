@@ -345,6 +345,17 @@ class WordGenerator:
             parts.append(text)
         return self.FIELD_SEP.join(parts)
 
+    @staticmethod
+    def _parse_group_key(key: str) -> tuple[str, str]:
+        """Parse group key into (nenki_name, death_year_era).
+
+        Key format: "年忌名|years_offset|死亡年元号" or legacy "年忌名|years_offset"
+        """
+        parts = key.split("|")
+        nenki_name = parts[0]
+        death_year_era = parts[2] if len(parts) >= 3 else ""
+        return nenki_name, death_year_era
+
     def _build_single_column_content(
         self,
         doc: Document,
@@ -354,10 +365,11 @@ class WordGenerator:
     ):
         """Single column layout: each nenki group with subtitle + entries."""
         for key, people_data in sorted_data:
-            nenki_name = key.split("|")[0]
+            nenki_name, death_year_era = self._parse_group_key(key)
+            header_text = f"{nenki_name}\u3000{death_year_era}" if death_year_era else nenki_name
 
             subtitle = doc.add_paragraph()
-            subtitle_run = subtitle.add_run(nenki_name)
+            subtitle_run = subtitle.add_run(header_text)
             subtitle_run.font.size = Pt(28)
             subtitle_run.font.bold = True
             subtitle_run.font.name = self.FONT_NAME
@@ -385,10 +397,11 @@ class WordGenerator:
     ):
         """Dual column layout: data flows into Word's native 2 columns."""
         for key, people_data in sorted_data:
-            nenki_name = key.split("|")[0]
+            nenki_name, death_year_era = self._parse_group_key(key)
+            header_text = f"{nenki_name}\u3000{death_year_era}" if death_year_era else nenki_name
 
             subtitle = doc.add_paragraph()
-            subtitle_run = subtitle.add_run(nenki_name)
+            subtitle_run = subtitle.add_run(header_text)
             subtitle_run.font.size = Pt(16)
             subtitle_run.font.bold = True
             subtitle_run.font.name = self.FONT_NAME

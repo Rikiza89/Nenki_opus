@@ -153,8 +153,10 @@ class PdfGenerator:
         elements.append(Spacer(1, 6 * mm))
 
         for key, entries in sorted_data:
-            nenki_name = key.split("|")[0]
-            header_text = nenki_name
+            parts = key.split("|")
+            nenki_name = parts[0]
+            death_year_era = parts[2] if len(parts) >= 3 else ""
+            header_text = f"{nenki_name}\u3000{death_year_era}" if death_year_era else nenki_name
             elements.append(Paragraph(header_text, section_style))
 
             # Header row

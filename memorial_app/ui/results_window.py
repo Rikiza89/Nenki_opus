@@ -34,7 +34,7 @@ from PySide6.QtCore import Qt
 
 from memorial_app.database.db_manager import DatabaseManager
 from memorial_app.core.nenki_calculator import STANDARD_NENKI, DEFAULT_SELECTED_NENKI
-from memorial_app.core.date_converter import format_date_kanji_era, format_nenki_title
+from memorial_app.core.date_converter import format_date_kanji_era, format_nenki_title, format_year_kanji_era
 from memorial_app.core.era_converter import format_date_era
 
 # All possible built-in fields the user can choose from
@@ -182,6 +182,84 @@ class DocumentSettingsDialog(QDialog):
         return self.layout_combo.currentData()
 
 
+class PersonSelectionDialog(QDialog):
+    """Dialog to select which people to include in the document."""
+
+    def __init__(self, filtered_results, parent=None):
+        """Args:
+            filtered_results: [(ann, person_name, attrs, person_id), ...]
+        """
+        super().__init__(parent)
+        self.setWindowTitle("出力対象者の選択")
+        self.setMinimumWidth(500)
+        self.setMinimumHeight(400)
+
+        layout = QVBoxLayout(self)
+
+        hint = QLabel("ドキュメントに含める対象者を選択してください。\nチェックを外すと出力から除外されます。")
+        hint.setStyleSheet("color: #2c3e50; font-size: 12px; padding: 4px;")
+        layout.addWidget(hint)
+
+        self._list = QListWidget()
+        self._person_ids = []  # parallel list of person_ids
+
+        # Group by nenki for display, but each item maps to a person_id
+        for ann, name, attrs, pid in filtered_results:
+            label = f"【{ann.name}】{name}"
+            item = QListWidgetItem(label)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Checked)
+            self._list.addItem(item)
+            self._person_ids.append(pid)
+
+        layout.addWidget(self._list)
+
+        # Select all / none
+        btn_layout = QHBoxLayout()
+        all_btn = QPushButton("全て選択")
+        all_btn.clicked.connect(lambda: self._set_all(True))
+        btn_layout.addWidget(all_btn)
+        none_btn = QPushButton("全て解除")
+        none_btn.clicked.connect(lambda: self._set_all(False))
+        btn_layout.addWidget(none_btn)
+        btn_layout.addStretch()
+        layout.addLayout(btn_layout)
+
+        count_label = QLabel(f"合計: {len(filtered_results)}名")
+        count_label.setStyleSheet("color: #7f8c8d; font-size: 11px;")
+        layout.addWidget(count_label)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.button(QDialogButtonBox.Ok).setText("次へ")
+        buttons.button(QDialogButtonBox.Cancel).setText("キャンセル")
+        buttons.accepted.connect(self._validate_and_accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _set_all(self, checked: bool):
+        state = Qt.Checked if checked else Qt.Unchecked
+        for i in range(self._list.count()):
+            self._list.item(i).setCheckState(state)
+
+    def _validate_and_accept(self):
+        has_checked = any(
+            self._list.item(i).checkState() == Qt.Checked
+            for i in range(self._list.count())
+        )
+        if not has_checked:
+            QMessageBox.warning(self, "選択エラー", "少なくとも1名を選択してください。")
+            return
+        self.accept()
+
+    def get_excluded_person_ids(self) -> set:
+        """Return set of person_ids that were unchecked."""
+        excluded = set()
+        for i in range(self._list.count()):
+            if self._list.item(i).checkState() != Qt.Checked:
+                excluded.add(self._person_ids[i])
+        return excluded
+
+
 class ResultsPage(QWidget):
     def __init__(self, db_manager: DatabaseManager):
         super().__init__()
@@ -283,7 +361,8 @@ class ResultsPage(QWidget):
                 fields.append(key)
         return fields
 
-    def _get_sorted_data_with_fields(self, selected_fields: list[str]):
+    def _get_sorted_data_with_fields(self, selected_fields: list[str],
+                                       excluded_pids: set | None = None):
         """Build grouped data where each person entry is a list of field values.
 
         The "年忌名" field is excluded from entry rows because it is already
@@ -293,14 +372,17 @@ class ResultsPage(QWidget):
             name for name, cb in self.nenki_checks.items() if cb.isChecked()
         }
         filtered = [r for r in self._results if r[0].name in selected_nenki]
+        if excluded_pids:
+            filtered = [r for r in filtered if r[3] not in excluded_pids]
 
         # Exclude 年忌名 from per-row fields; it appears as group header
         entry_fields = [f for f in selected_fields if f != "年忌名"]
 
         groups = defaultdict(list)
         for ann, name, attrs, pid in filtered:
-            # Group by nenki name only so all people with same 回忌 are merged
-            key = f"{ann.name}|{ann.years_offset}"
+            # Group by nenki name; include death year era for header display
+            death_year_era = format_year_kanji_era(ann.death_date)
+            key = f"{ann.name}|{ann.years_offset}|{death_year_era}"
             # Build ordered field values for this person
             entry = []
             for field in entry_fields:
@@ -338,6 +420,16 @@ class ResultsPage(QWidget):
             )
             return
 
+        # Person selection dialog
+        person_dialog = PersonSelectionDialog(filtered, parent=self)
+        if not person_dialog.exec():
+            return
+        excluded_pids = person_dialog.get_excluded_person_ids()
+        filtered = [r for r in filtered if r[3] not in excluded_pids]
+        if not filtered:
+            QMessageBox.information(self, "情報", "出力する対象者がいません。")
+            return
+
         # Discover available fields
         available_fields = self._collect_available_fields()
 
@@ -349,8 +441,8 @@ class ResultsPage(QWidget):
         # Build a temporary one for the summary count
         temp_groups = defaultdict(list)
         for ann, name, attrs, pid in filtered:
-            death_year_era = format_date_kanji_era(ann.death_date)
-            key = f"{ann.name}|{ann.years_offset}|（{death_year_era}没）"
+            death_year_era = format_year_kanji_era(ann.death_date)
+            key = f"{ann.name}|{ann.years_offset}|{death_year_era}"
             temp_groups[key].append(name)
         dialog._sorted_data = list(temp_groups.items())
         # Update summary label
@@ -366,7 +458,7 @@ class ResultsPage(QWidget):
 
         selected_fields = dialog.get_selected_fields()
         single_column = dialog.get_single_column()
-        sorted_data = self._get_sorted_data_with_fields(selected_fields)
+        sorted_data = self._get_sorted_data_with_fields(selected_fields, excluded_pids)
         # 年忌名 is shown as group header, not per-row field
         entry_fields = [f for f in selected_fields if f != "年忌名"]
 
