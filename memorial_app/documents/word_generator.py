@@ -108,19 +108,19 @@ class WordGenerator:
         for key, people_data in sorted_data:
             nenki_name = key.split("|")[0]
 
-            # Nenki subtitle — always centered
-            subtitle = doc.add_paragraph()
-            subtitle_run = subtitle.add_run(nenki_name)
-            subtitle_run.font.size = Pt(20) if single_column else Pt(16)
-            subtitle_run.font.bold = True
-            subtitle_run.font.name = self.FONT_NAME
-            subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            subtitle.paragraph_format.space_after = Pt(12)
-
             if single_column:
+                # Subtitle centered on page
+                subtitle = doc.add_paragraph()
+                subtitle_run = subtitle.add_run(nenki_name)
+                subtitle_run.font.size = Pt(20)
+                subtitle_run.font.bold = True
+                subtitle_run.font.name = self.FONT_NAME
+                subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                subtitle.paragraph_format.space_after = Pt(12)
                 self._build_single_column_group(doc, people_data, field_names, field_widths)
             else:
-                self._build_dual_column_group(doc, people_data, field_names, field_widths)
+                # Subtitle centered relative to column, not page
+                self._build_dual_column_group(doc, nenki_name, people_data, field_names, field_widths)
 
             # Space between groups
             doc.add_paragraph()
@@ -173,14 +173,37 @@ class WordGenerator:
             para.paragraph_format.space_after = Pt(6)
 
     def _build_dual_column_group(
-        self, doc: Document, people_data: list,
+        self, doc: Document, nenki_name: str, people_data: list,
         field_names: list[str] | None, field_widths: list[int],
     ):
-        """Dual column layout: split people into two halves, fields aligned."""
+        """Dual column layout: split people into two halves, fields aligned.
+
+        The subtitle is centered relative to the column entry width, not the page.
+        """
         half = (len(people_data) + 1) // 2
         base_indent = Inches(0.5)
 
-        # Column 1
+        # Compute total entry line width (in display chars) for centering the subtitle
+        # entry = separator + field1 + sep + field2 + ... (same as _format_aligned_entry)
+        entry_width = sum(field_widths) + 2  # +2 for leading separator
+        if len(field_widths) > 1:
+            entry_width += (len(field_widths) - 1) * 2  # separators between fields (each \u3000 = width 2)
+
+        # Center nenki_name within entry_width using full-width space padding
+        name_width = _display_width(nenki_name)
+        left_pad = (entry_width - name_width) // 2 // 2  # divide by 2 because each \u3000 = width 2
+        centered_name = "\u3000" * max(left_pad, 0) + nenki_name
+
+        # Column 1 subtitle
+        subtitle1 = doc.add_paragraph()
+        s1_run = subtitle1.add_run(centered_name)
+        s1_run.font.size = Pt(16)
+        s1_run.font.bold = True
+        s1_run.font.name = self.FONT_NAME
+        subtitle1.paragraph_format.left_indent = base_indent
+        subtitle1.paragraph_format.space_after = Pt(8)
+
+        # Column 1 entries
         for idx in range(half):
             if idx < len(people_data):
                 text = self.FIELD_SEP + self._format_aligned_entry(people_data[idx], field_widths)
@@ -192,7 +215,16 @@ class WordGenerator:
         spacer_run.font.size = Pt(11)
         spacer_run.font.name = self.FONT_NAME
 
-        # Column 2
+        # Column 2 subtitle
+        subtitle2 = doc.add_paragraph()
+        s2_run = subtitle2.add_run(centered_name)
+        s2_run.font.size = Pt(16)
+        s2_run.font.bold = True
+        s2_run.font.name = self.FONT_NAME
+        subtitle2.paragraph_format.left_indent = base_indent
+        subtitle2.paragraph_format.space_after = Pt(8)
+
+        # Column 2 entries
         for idx in range(half, len(people_data)):
             text = self.FIELD_SEP + self._format_aligned_entry(people_data[idx], field_widths)
             self._add_dual_column_entry(doc, text, base_indent)
