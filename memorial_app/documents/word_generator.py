@@ -202,7 +202,7 @@ class WordGenerator:
 
         # Create borderless table with 1 row, 2 cells
         usable_width = Inches(11.69) - Inches(1.0)  # page width minus margins
-        col_width = usable_width // 2
+        col_width_twips = int(usable_width / 2 / 635)  # EMU to twips
         table = doc.add_table(rows=1, cols=2)
         table.autofit = False
 
@@ -225,7 +225,7 @@ class WordGenerator:
             tc = cell._tc
             tcPr = tc.get_or_add_tcPr()
             tcW = OxmlElement("w:tcW")
-            tcW.set(qn("w:w"), str(int(col_width.emu / 635)))  # EMU to twips
+            tcW.set(qn("w:w"), str(col_width_twips))
             tcW.set(qn("w:type"), "dxa")
             tcPr.append(tcW)
 
