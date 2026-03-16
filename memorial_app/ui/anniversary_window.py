@@ -19,7 +19,7 @@ from memorial_app.core.date_converter import format_date_kanji_era, format_year_
 
 class CalculationWorker(QThread):
     progress = Signal(int, int)
-    finished = Signal(list)  # list of (NenkiAnniversary, person_name, person_id)
+    finished = Signal(list)
     error = Signal(str)
 
     def __init__(self, db, mode, target_year=None, start_date=None, end_date=None):
@@ -52,15 +52,14 @@ class CalculationWorker(QThread):
                 else:
                     continue
 
-                # Get buddhist name from attributes
-                buddhist_name = ""
+                # Collect ALL attributes as a dict
+                attrs = {}
                 for attr in person.attributes:
-                    if attr.column_name in ("法名", "戒名"):
-                        buddhist_name = attr.value or ""
-                        break
+                    attrs[attr.column_name] = attr.value or ""
 
                 for ann in anns:
-                    results.append((ann, person.name, buddhist_name, person.id))
+                    # Each result carries full person data
+                    results.append((ann, person.name, attrs, person.id))
 
             results.sort(key=lambda x: (x[0].name, x[0].date))
             self.finished.emit(results)
@@ -146,7 +145,8 @@ class AnniversaryPage(QWidget):
         self._results = results
         self.table.setRowCount(len(results))
 
-        for i, (ann, name, buddhist_name, pid) in enumerate(results):
+        for i, (ann, name, attrs, pid) in enumerate(results):
+            buddhist_name = attrs.get("法名", "") or attrs.get("戒名", "")
             self.table.setItem(i, 0, QTableWidgetItem(ann.name))
             self.table.setItem(i, 1, QTableWidgetItem(format_date_era(ann.date)))
             self.table.setItem(i, 2, QTableWidgetItem(ann.date.isoformat()))
@@ -157,7 +157,6 @@ class AnniversaryPage(QWidget):
         self.export_btn.setEnabled(len(results) > 0)
 
     def _go_to_document_gen(self):
-        """Navigate to results page with current data for document generation."""
         main_window = self.window()
         if hasattr(main_window, "pages") and "結果一覧" in main_window.pages:
             results_page = main_window.pages["結果一覧"]

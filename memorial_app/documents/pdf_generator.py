@@ -23,24 +23,26 @@ class PdfGenerator:
         sorted_data: list,
         title: str,
         output_path: Path,
+        field_names: list[str] | None = None,
         single_column: bool = True,
     ):
         """Create a PDF nenki document.
 
         Args:
-            sorted_data: List of (key, entries) from ResultsPage._get_sorted_data().
+            sorted_data: List of (key, entries).
             title: Document title.
             output_path: Path to save the PDF.
+            field_names: List of field names corresponding to each entry's values.
             single_column: True for single column layout.
         """
         # Try docx2pdf conversion first
-        if self._try_docx2pdf(sorted_data, title, output_path, single_column):
+        if self._try_docx2pdf(sorted_data, title, output_path, field_names, single_column):
             return
 
         # Fallback: generate PDF directly with reportlab
-        self._generate_reportlab(sorted_data, title, output_path)
+        self._generate_reportlab(sorted_data, title, output_path, field_names)
 
-    def _try_docx2pdf(self, sorted_data, title, output_path, single_column) -> bool:
+    def _try_docx2pdf(self, sorted_data, title, output_path, field_names, single_column) -> bool:
         """Try to generate PDF by first creating a Word doc then converting."""
         try:
             from docx2pdf import convert
@@ -52,7 +54,10 @@ class PdfGenerator:
                 tmp_docx = Path(tmp.name)
 
             gen = WordGenerator()
-            gen.create_combined_document(sorted_data, title, tmp_docx, single_column)
+            gen.create_combined_document(
+                sorted_data, title, tmp_docx,
+                field_names=field_names, single_column=single_column,
+            )
 
             convert(str(tmp_docx), str(output_path))
             tmp_docx.unlink(missing_ok=True)
@@ -61,7 +66,7 @@ class PdfGenerator:
             tmp_docx.unlink(missing_ok=True)
             return False
 
-    def _generate_reportlab(self, sorted_data, title, output_path):
+    def _generate_reportlab(self, sorted_data, title, output_path, field_names=None):
         """Fallback PDF generation using reportlab."""
         from reportlab.lib.pagesizes import A4, landscape
         from reportlab.lib.units import cm, mm
@@ -71,7 +76,7 @@ class PdfGenerator:
         from reportlab.platypus import (
             SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer,
         )
-        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.styles import ParagraphStyle
         from reportlab.lib.enums import TA_CENTER, TA_LEFT
 
         try:
@@ -108,6 +113,13 @@ class PdfGenerator:
             leftMargin=1.5 * cm, rightMargin=1.5 * cm,
         )
 
+        # Determine column headers
+        if field_names:
+            headers = field_names
+        else:
+            headers = ["氏名", "法名", "法要日"]
+
+        num_cols = len(headers)
         elements = []
         elements.append(Paragraph(title, title_style))
         elements.append(Spacer(1, 6 * mm))
@@ -117,21 +129,28 @@ class PdfGenerator:
             header_text = f"{nenki_name}　{death_info}"
             elements.append(Paragraph(header_text, section_style))
 
-            table_data = [[
-                Paragraph("氏名", header_cell_style),
-                Paragraph("法名", header_cell_style),
-                Paragraph("法要日", header_cell_style),
-            ]]
-            for name, display_name, date_str in entries:
-                bname = display_name if display_name != name else ""
-                table_data.append([
-                    Paragraph(name, cell_style),
-                    Paragraph(bname, cell_style),
-                    Paragraph(date_str, cell_style),
-                ])
+            # Header row
+            table_data = [[Paragraph(h, header_cell_style) for h in headers]]
+
+            for entry in entries:
+                if field_names:
+                    # entry is a list of field values matching field_names
+                    row = [Paragraph(str(v) if v else "", cell_style) for v in entry]
+                else:
+                    # Legacy: (name, display_name, date_str)
+                    name = entry[0]
+                    bname = entry[1] if entry[1] != entry[0] else ""
+                    date_str = entry[2] if len(entry) > 2 else ""
+                    row = [
+                        Paragraph(name, cell_style),
+                        Paragraph(bname, cell_style),
+                        Paragraph(date_str, cell_style),
+                    ]
+                table_data.append(row)
 
             page_width = page[0] - 3 * cm
-            col_widths = [page_width * 0.30, page_width * 0.35, page_width * 0.35]
+            col_width = page_width / num_cols
+            col_widths = [col_width] * num_cols
 
             table = Table(table_data, colWidths=col_widths)
             table.setStyle(TableStyle([

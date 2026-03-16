@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFileDialog, QComboBox, QProgressBar, QTableWidget, QTableWidgetItem,
     QMessageBox, QGroupBox, QFormLayout, QHeaderView, QStackedWidget,
-    QFrame, QSizePolicy, QAbstractItemView,
+    QFrame, QSizePolicy, QAbstractItemView, QListWidget, QListWidgetItem,
 )
 from PySide6.QtCore import Qt, QThread, Signal
 
@@ -41,7 +41,25 @@ class ImportWorker(QThread):
 
 
 class ImportPage(QWidget):
-    """Multi-step import wizard with checkpoints at each stage."""
+    """Multi-step import wizard with checkpoints at each stage.
+
+    Steps:
+        1. File selection + sheet selection
+        2. Column mapping
+        3. Data preview
+        4. Validation
+        5. Import confirmation
+        6. Result
+    """
+
+    STEP_NAMES = [
+        "ステップ 1/6: ファイル・シート選択",
+        "ステップ 2/6: 列マッピング",
+        "ステップ 3/6: データプレビュー",
+        "ステップ 4/6: データ検証",
+        "ステップ 5/6: インポート確認",
+        "ステップ 6/6: 完了",
+    ]
 
     def __init__(self, db_manager: DatabaseManager):
         super().__init__()
@@ -72,22 +90,23 @@ class ImportPage(QWidget):
         self.steps = QStackedWidget()
         layout.addWidget(self.steps)
 
-        self._build_step1_file_selection()
-        self._build_step2_data_preview()
-        self._build_step3_validation()
-        self._build_step4_confirm_import()
-        self._build_step5_result()
+        self._build_step1_file_and_sheet()
+        self._build_step2_column_mapping()
+        self._build_step3_data_preview()
+        self._build_step4_validation()
+        self._build_step5_confirm_import()
+        self._build_step6_result()
 
         self._go_to_step(0)
 
-    # ─── Step 1: File & Sheet Selection + Column Mapping ───
+    # ─── Step 1: File Selection + Sheet Selection ───
 
-    def _build_step1_file_selection(self):
+    def _build_step1_file_and_sheet(self):
         page = QWidget()
         layout = QVBoxLayout(page)
 
         # File selection
-        file_group = QGroupBox("ステップ1: ファイルを選択してください")
+        file_group = QGroupBox("ファイルを選択してください")
         file_layout = QHBoxLayout(file_group)
         self.file_label = QLabel("ファイルが選択されていません")
         self.file_label.setStyleSheet("color: #7f8c8d;")
@@ -98,31 +117,39 @@ class ImportPage(QWidget):
         file_layout.addWidget(browse_btn)
         layout.addWidget(file_group)
 
-        # Sheet selection
-        sheet_group = QGroupBox("シート選択")
-        sheet_layout = QHBoxLayout(sheet_group)
-        self.sheet_combo = QComboBox()
-        self.sheet_combo.currentIndexChanged.connect(self._on_sheet_changed)
-        sheet_layout.addWidget(self.sheet_combo, 1)
-        self.sheet_info_label = QLabel("")
-        sheet_layout.addWidget(self.sheet_info_label)
-        layout.addWidget(sheet_group)
+        # Sheet selection (visible when multi-sheet)
+        self.sheet_group = QGroupBox("シートを選択してください")
+        sheet_layout = QVBoxLayout(self.sheet_group)
 
-        # Column mapping
-        mapping_group = QGroupBox("列マッピング（自動検出結果を確認してください）")
-        mapping_layout = QFormLayout(mapping_group)
-        self.name_combo = QComboBox()
-        mapping_layout.addRow("氏名列:", self.name_combo)
-        self.date_combo = QComboBox()
-        mapping_layout.addRow("没年月日列:", self.date_combo)
-        self.buddhist_combo = QComboBox()
-        mapping_layout.addRow("法名列:", self.buddhist_combo)
-        layout.addWidget(mapping_group)
+        self.sheet_hint = QLabel("このファイルには複数のシートがあります。インポートするシートを選んでください。")
+        self.sheet_hint.setStyleSheet("color: #2c3e50; font-size: 12px;")
+        self.sheet_hint.setWordWrap(True)
+        sheet_layout.addWidget(self.sheet_hint)
+
+        self.sheet_list = QListWidget()
+        self.sheet_list.currentRowChanged.connect(self._on_sheet_selected)
+        sheet_layout.addWidget(self.sheet_list)
+
+        self.sheet_detail_label = QLabel("")
+        self.sheet_detail_label.setStyleSheet("color: #7f8c8d; font-size: 12px;")
+        sheet_layout.addWidget(self.sheet_detail_label)
+
+        layout.addWidget(self.sheet_group)
+        self.sheet_group.setVisible(False)
+
+        # Single-sheet info (visible when only one sheet)
+        self.single_sheet_label = QLabel("")
+        self.single_sheet_label.setStyleSheet(
+            "color: #27ae60; font-size: 13px; padding: 8px; "
+            "background: #eafaf1; border-radius: 4px;"
+        )
+        self.single_sheet_label.setVisible(False)
+        layout.addWidget(self.single_sheet_label)
 
         # Navigation
         nav = QHBoxLayout()
         nav.addStretch()
-        self.step1_next = QPushButton("次へ: データプレビュー →")
+        self.step1_next = QPushButton("次へ: 列マッピング →")
         self.step1_next.setStyleSheet("background: #3498db; color: white; padding: 10px 24px; font-size: 14px;")
         self.step1_next.setEnabled(False)
         self.step1_next.clicked.connect(self._step1_next)
@@ -132,13 +159,62 @@ class ImportPage(QWidget):
 
         self.steps.addWidget(page)
 
-    # ─── Step 2: Data Preview ───
+    # ─── Step 2: Column Mapping ───
 
-    def _build_step2_data_preview(self):
+    def _build_step2_column_mapping(self):
         page = QWidget()
         layout = QVBoxLayout(page)
 
-        info = QLabel("ステップ2: インポートするデータを確認してください")
+        info = QLabel("列マッピングを確認してください（自動検出結果を変更できます）")
+        info.setStyleSheet("font-size: 13px; color: #2c3e50; font-weight: bold;")
+        layout.addWidget(info)
+
+        self.mapping_sheet_info = QLabel("")
+        self.mapping_sheet_info.setStyleSheet("color: #7f8c8d; font-size: 12px; padding: 4px;")
+        layout.addWidget(self.mapping_sheet_info)
+
+        mapping_group = QGroupBox("列マッピング")
+        mapping_layout = QFormLayout(mapping_group)
+        self.name_combo = QComboBox()
+        mapping_layout.addRow("氏名列:", self.name_combo)
+        self.date_combo = QComboBox()
+        mapping_layout.addRow("没年月日列:", self.date_combo)
+        self.buddhist_combo = QComboBox()
+        mapping_layout.addRow("法名列:", self.buddhist_combo)
+        layout.addWidget(mapping_group)
+
+        # Column preview: show first few rows of mapped columns
+        preview_group = QGroupBox("マッピング結果プレビュー（先頭5行）")
+        preview_layout = QVBoxLayout(preview_group)
+        self.mapping_preview_table = QTableWidget()
+        self.mapping_preview_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.mapping_preview_table.setMaximumHeight(180)
+        self.mapping_preview_table.horizontalHeader().setStretchLastSection(True)
+        preview_layout.addWidget(self.mapping_preview_table)
+        layout.addWidget(preview_group)
+
+        # Navigation
+        nav = QHBoxLayout()
+        back_btn = QPushButton("← 戻る")
+        back_btn.setStyleSheet("padding: 8px 16px;")
+        back_btn.clicked.connect(lambda: self._go_to_step(0))
+        nav.addWidget(back_btn)
+        nav.addStretch()
+        next_btn = QPushButton("次へ: データプレビュー →")
+        next_btn.setStyleSheet("background: #3498db; color: white; padding: 10px 24px; font-size: 14px;")
+        next_btn.clicked.connect(self._step2_next)
+        nav.addWidget(next_btn)
+        layout.addLayout(nav)
+
+        self.steps.addWidget(page)
+
+    # ─── Step 3: Data Preview ───
+
+    def _build_step3_data_preview(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+
+        info = QLabel("インポートするデータを確認してください")
         info.setStyleSheet("font-size: 13px; color: #2c3e50; font-weight: bold;")
         layout.addWidget(info)
 
@@ -156,24 +232,24 @@ class ImportPage(QWidget):
         nav = QHBoxLayout()
         back_btn = QPushButton("← 戻る")
         back_btn.setStyleSheet("padding: 8px 16px;")
-        back_btn.clicked.connect(lambda: self._go_to_step(0))
+        back_btn.clicked.connect(lambda: self._go_to_step(1))
         nav.addWidget(back_btn)
         nav.addStretch()
         next_btn = QPushButton("次へ: 検証実行 →")
         next_btn.setStyleSheet("background: #3498db; color: white; padding: 10px 24px; font-size: 14px;")
-        next_btn.clicked.connect(self._step2_next)
+        next_btn.clicked.connect(self._step3_next)
         nav.addWidget(next_btn)
         layout.addLayout(nav)
 
         self.steps.addWidget(page)
 
-    # ─── Step 3: Validation ───
+    # ─── Step 4: Validation ───
 
-    def _build_step3_validation(self):
+    def _build_step4_validation(self):
         page = QWidget()
         layout = QVBoxLayout(page)
 
-        info = QLabel("ステップ3: データを検証中...")
+        info = QLabel("データを検証中...")
         info.setStyleSheet("font-size: 13px; color: #2c3e50; font-weight: bold;")
         layout.addWidget(info)
 
@@ -197,7 +273,7 @@ class ImportPage(QWidget):
         nav = QHBoxLayout()
         back_btn = QPushButton("← 戻る")
         back_btn.setStyleSheet("padding: 8px 16px;")
-        back_btn.clicked.connect(lambda: self._go_to_step(1))
+        back_btn.clicked.connect(lambda: self._go_to_step(2))
         nav.addWidget(back_btn)
 
         self.export_errors_btn = QPushButton("エラー行をExcelに出力")
@@ -207,22 +283,22 @@ class ImportPage(QWidget):
         nav.addWidget(self.export_errors_btn)
 
         nav.addStretch()
-        self.step3_next = QPushButton("次へ: インポート確認 →")
-        self.step3_next.setStyleSheet("background: #3498db; color: white; padding: 10px 24px; font-size: 14px;")
-        self.step3_next.setEnabled(False)
-        self.step3_next.clicked.connect(self._step3_next)
-        nav.addWidget(self.step3_next)
+        self.step4_next = QPushButton("次へ: インポート確認 →")
+        self.step4_next.setStyleSheet("background: #3498db; color: white; padding: 10px 24px; font-size: 14px;")
+        self.step4_next.setEnabled(False)
+        self.step4_next.clicked.connect(self._step4_next)
+        nav.addWidget(self.step4_next)
         layout.addLayout(nav)
 
         self.steps.addWidget(page)
 
-    # ─── Step 4: Confirm Import ───
+    # ─── Step 5: Confirm Import ───
 
-    def _build_step4_confirm_import(self):
+    def _build_step5_confirm_import(self):
         page = QWidget()
         layout = QVBoxLayout(page)
 
-        info = QLabel("ステップ4: インポート内容を最終確認してください")
+        info = QLabel("インポート内容を最終確認してください")
         info.setStyleSheet("font-size: 13px; color: #2c3e50; font-weight: bold;")
         layout.addWidget(info)
 
@@ -247,7 +323,7 @@ class ImportPage(QWidget):
         nav = QHBoxLayout()
         back_btn = QPushButton("← 戻る")
         back_btn.setStyleSheet("padding: 8px 16px;")
-        back_btn.clicked.connect(lambda: self._go_to_step(2))
+        back_btn.clicked.connect(lambda: self._go_to_step(3))
         nav.addWidget(back_btn)
         nav.addStretch()
         cancel_btn = QPushButton("キャンセル")
@@ -264,9 +340,9 @@ class ImportPage(QWidget):
 
         self.steps.addWidget(page)
 
-    # ─── Step 5: Results ───
+    # ─── Step 6: Results ───
 
-    def _build_step5_result(self):
+    def _build_step6_result(self):
         page = QWidget()
         layout = QVBoxLayout(page)
 
@@ -297,14 +373,7 @@ class ImportPage(QWidget):
     # ─── Step Navigation ───
 
     def _go_to_step(self, step: int):
-        step_names = [
-            "ステップ 1/5: ファイル選択・列マッピング",
-            "ステップ 2/5: データプレビュー",
-            "ステップ 3/5: データ検証",
-            "ステップ 4/5: インポート確認",
-            "ステップ 5/5: 完了",
-        ]
-        self.step_label.setText(step_names[step])
+        self.step_label.setText(self.STEP_NAMES[step])
         self.steps.setCurrentIndex(step)
 
     def refresh(self):
@@ -318,11 +387,13 @@ class ImportPage(QWidget):
         self.source_path = None
         self._validation_result = None
         self.file_label.setText("ファイルが選択されていません")
-        self.sheet_combo.clear()
+        self.sheet_list.clear()
+        self.sheet_group.setVisible(False)
+        self.single_sheet_label.setVisible(False)
         self.step1_next.setEnabled(False)
         self._go_to_step(0)
 
-    # ─── Step 1 Logic ───
+    # ─── Step 1 Logic: File + Sheet Selection ───
 
     def _browse_file(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -338,23 +409,68 @@ class ImportPage(QWidget):
         try:
             self.sheets = read_file(Path(path))
             infos = get_sheet_info(self.sheets)
-            self.sheet_combo.clear()
-            for info in infos:
-                self.sheet_combo.addItem(f"{info.name} ({info.row_count}行)", info.name)
-            if infos:
-                self._on_sheet_changed(0)
+
+            if len(infos) == 1:
+                # Single sheet: auto-select and show info
+                self.sheet_group.setVisible(False)
+                self.current_df = self.sheets[infos[0].name]
+                self.single_sheet_label.setText(
+                    f"シート「{infos[0].name}」を読み込みました（{infos[0].row_count}行 × {len(list(self.current_df.columns))}列）"
+                )
+                self.single_sheet_label.setVisible(True)
                 self.step1_next.setEnabled(True)
+            else:
+                # Multi-sheet: show sheet selection
+                self.single_sheet_label.setVisible(False)
+                self.sheet_group.setVisible(True)
+                self.sheet_list.clear()
+                for info in infos:
+                    cols = len(list(self.sheets[info.name].columns))
+                    item = QListWidgetItem(f"{info.name}　（{info.row_count}行 × {cols}列）")
+                    item.setData(Qt.UserRole, info.name)
+                    self.sheet_list.addItem(item)
+                self.step1_next.setEnabled(False)
+                self.current_df = None
+
         except Exception as e:
             QMessageBox.critical(self, "読込エラー", f"ファイルの読み込みに失敗しました:\n{e}")
 
-    def _on_sheet_changed(self, index: int):
-        if self.sheets is None or index < 0:
+    def _on_sheet_selected(self, row: int):
+        if row < 0 or self.sheets is None:
             return
-        sheet_name = self.sheet_combo.currentData()
-        if sheet_name is None:
+        item = self.sheet_list.item(row)
+        if item is None:
             return
+        sheet_name = item.data(Qt.UserRole)
         self.current_df = self.sheets[sheet_name]
+        cols = list(self.current_df.columns)
+        self.sheet_detail_label.setText(
+            f"選択中: {sheet_name}（{len(self.current_df)}行 × {len(cols)}列）"
+        )
+        self.step1_next.setEnabled(True)
+
+    def _step1_next(self):
+        if self.current_df is None:
+            QMessageBox.warning(self, "選択エラー", "シートを選択してください。")
+            return
+        self._setup_column_mapping()
+        self._go_to_step(1)
+
+    # ─── Step 2 Logic: Column Mapping ───
+
+    def _setup_column_mapping(self):
+        """Populate column mapping combos for the selected sheet."""
         columns = list(self.current_df.columns)
+
+        # Show sheet info
+        sheet_name = ""
+        if self.sheet_list.currentItem():
+            sheet_name = self.sheet_list.currentItem().data(Qt.UserRole)
+        elif self.sheets:
+            sheet_name = list(self.sheets.keys())[0]
+        self.mapping_sheet_info.setText(
+            f"シート: {sheet_name}　|　{len(columns)}列 × {len(self.current_df)}行"
+        )
 
         for combo in [self.name_combo, self.date_combo, self.buddhist_combo]:
             combo.clear()
@@ -366,7 +482,47 @@ class ImportPage(QWidget):
         self._select_combo(self.name_combo, mapping.name_col)
         self._select_combo(self.date_combo, mapping.death_date_col)
         self._select_combo(self.buddhist_combo, mapping.buddhist_name_col)
-        self.sheet_info_label.setText(f"{len(columns)}列 × {len(self.current_df)}行")
+
+        # Show mapping preview
+        self._update_mapping_preview()
+        self.name_combo.currentIndexChanged.connect(self._update_mapping_preview)
+        self.date_combo.currentIndexChanged.connect(self._update_mapping_preview)
+        self.buddhist_combo.currentIndexChanged.connect(self._update_mapping_preview)
+
+    def _update_mapping_preview(self):
+        """Show first 5 rows with mapped columns highlighted."""
+        if self.current_df is None:
+            return
+        preview_df = self.current_df.head(5)
+        name_col = self.name_combo.currentData()
+        date_col = self.date_combo.currentData()
+        buddhist_col = self.buddhist_combo.currentData()
+
+        # Show mapped columns first, then others
+        mapped = []
+        labels = []
+        if name_col and name_col in preview_df.columns:
+            mapped.append(name_col)
+            labels.append(f"氏名 [{name_col}]")
+        if date_col and date_col in preview_df.columns:
+            mapped.append(date_col)
+            labels.append(f"没年月日 [{date_col}]")
+        if buddhist_col and buddhist_col in preview_df.columns:
+            mapped.append(buddhist_col)
+            labels.append(f"法名 [{buddhist_col}]")
+
+        if not mapped:
+            self.mapping_preview_table.setRowCount(0)
+            return
+
+        self.mapping_preview_table.setColumnCount(len(mapped))
+        self.mapping_preview_table.setHorizontalHeaderLabels(labels)
+        self.mapping_preview_table.setRowCount(len(preview_df))
+
+        for i, (_, row) in enumerate(preview_df.iterrows()):
+            for j, col in enumerate(mapped):
+                val = str(row.get(col, ""))
+                self.mapping_preview_table.setItem(i, j, QTableWidgetItem(val))
 
     def _select_combo(self, combo: QComboBox, value):
         if value is None:
@@ -393,7 +549,7 @@ class ImportPage(QWidget):
         base.extra_cols = [c for c in columns if c not in used]
         return base
 
-    def _step1_next(self):
+    def _step2_next(self):
         if self.current_df is None:
             return
         mapping = self._build_mapping()
@@ -405,9 +561,9 @@ class ImportPage(QWidget):
             return
         self.mapping = mapping
         self._populate_preview()
-        self._go_to_step(1)
+        self._go_to_step(2)
 
-    # ─── Step 2 Logic: Data Preview ───
+    # ─── Step 3 Logic: Data Preview ───
 
     def _populate_preview(self):
         df = self.current_df
@@ -432,7 +588,7 @@ class ImportPage(QWidget):
         else:
             self.preview_info.setText(f"全{total}行を表示中")
 
-    def _step2_next(self):
+    def _step3_next(self):
         reply = QMessageBox.question(
             self, "検証の実行",
             f"全{len(self.current_df)}行のデータを検証します。\n"
@@ -441,16 +597,16 @@ class ImportPage(QWidget):
         )
         if reply != QMessageBox.Yes:
             return
-        self._go_to_step(2)
+        self._go_to_step(3)
         self._run_validation()
 
-    # ─── Step 3 Logic: Validation ───
+    # ─── Step 4 Logic: Validation ───
 
     def _run_validation(self):
         self.validation_progress.setMaximum(len(self.current_df))
         self.validation_progress.setValue(0)
         self.validation_status.setText("検証中...")
-        self.step3_next.setEnabled(False)
+        self.step4_next.setEnabled(False)
         self.export_errors_btn.setEnabled(False)
 
         self._worker = ImportWorker(self.db, self.current_df, self.mapping, self.source_path)
@@ -492,7 +648,7 @@ class ImportPage(QWidget):
             self.error_table.setRowCount(0)
             self.error_table.setColumnCount(0)
 
-        self.step3_next.setEnabled(valid_count > 0 or dup_count > 0)
+        self.step4_next.setEnabled(valid_count > 0 or dup_count > 0)
 
     def _on_validation_error(self, error_msg: str):
         self.validation_status.setText(f"検証エラー: {error_msg}")
@@ -508,12 +664,12 @@ class ImportPage(QWidget):
             export_error_rows(self._validation_result.error_rows, Path(path))
             QMessageBox.information(self, "完了", f"エラー行を保存しました:\n{path}")
 
-    def _step3_next(self):
+    def _step4_next(self):
         self._handle_duplicates()
         self._populate_confirm()
-        self._go_to_step(3)
+        self._go_to_step(4)
 
-    # ─── Step 4 Logic: Confirm Import ───
+    # ─── Step 5 Logic: Confirm Import ───
 
     def _handle_duplicates(self):
         """Ask user about each duplicate row."""
@@ -544,10 +700,16 @@ class ImportPage(QWidget):
             return
 
         valid_count = len(result.valid_rows)
+        sheet_name = ""
+        if self.sheet_list.currentItem():
+            sheet_name = self.sheet_list.currentItem().data(Qt.UserRole)
+        elif self.sheets:
+            sheet_name = list(self.sheets.keys())[0]
+
         self.confirm_summary.setText(
             f"インポート対象: {valid_count}件\n"
             f"ファイル: {Path(self.source_path).name}\n"
-            f"シート: {self.sheet_combo.currentText()}\n\n"
+            f"シート: {sheet_name}\n\n"
             f"「インポート実行」を押すとデータベースに追加されます。"
         )
 
@@ -585,4 +747,4 @@ class ImportPage(QWidget):
             self.result_label.setText(f"インポートに失敗しました\n\n{e}")
             self.result_label.setStyleSheet("color: #e74c3c; font-size: 16px; padding: 16px;")
 
-        self._go_to_step(4)
+        self._go_to_step(5)

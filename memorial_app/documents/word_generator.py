@@ -24,16 +24,18 @@ class WordGenerator:
         sorted_data: list,
         title: str,
         output_path: Path,
+        field_names: list[str] | None = None,
         single_column: bool = True,
     ):
         """Create a combined nenki document with vertical Japanese text.
 
         Args:
-            sorted_data: List of (key, entries) from ResultsPage._get_sorted_data().
+            sorted_data: List of (key, entries).
                 key: "年忌名|years_offset|(死亡日era表記没)"
-                entries: list of (name, display_name, date_str)
+                entries: list of field-value lists (ordered by field_names)
             title: Document title (e.g. "年忌表 - 令和八年の年忌法要")
             output_path: Path to save the .docx file.
+            field_names: List of field names corresponding to each entry's values.
             single_column: True for single column, False for dual column layout.
         """
         doc = Document()
@@ -94,9 +96,9 @@ class WordGenerator:
             subtitle.paragraph_format.space_after = Pt(12)
 
             if single_column:
-                self._build_single_column_group(doc, people_data)
+                self._build_single_column_group(doc, people_data, field_names)
             else:
-                self._build_dual_column_group(doc, people_data)
+                self._build_dual_column_group(doc, people_data, field_names)
 
             # Space between groups
             doc.add_paragraph()
@@ -106,12 +108,22 @@ class WordGenerator:
         # Auto-convert to PDF
         self._convert_to_pdf(output_path)
 
-    def _build_single_column_group(self, doc: Document, people_data: list):
+    def _format_entry_text(self, entry: list, field_names: list[str] | None) -> str:
+        """Format a single entry's fields into display text."""
+        if field_names:
+            # Join all field values with full-width space separator
+            parts = [v for v in entry if v]
+            return "\u3000".join(parts)
+        else:
+            # Legacy fallback: (name, display_name, date_str) tuple
+            name = entry[1] if entry[1] else entry[0]
+            date = entry[2] if len(entry) > 2 else ""
+            return f"{date}\u3000{name}" if date else name
+
+    def _build_single_column_group(self, doc: Document, people_data: list, field_names: list[str] | None = None):
         """Single column layout: each person on one line."""
-        for person in people_data:
-            name = person[1] if person[1] else person[0]
-            date = person[2]
-            text = f"\u3000\u3000{date}\u3000{name}" if date else f"\u3000\u3000{name}"
+        for entry in people_data:
+            text = "\u3000\u3000" + self._format_entry_text(entry, field_names)
 
             para = doc.add_paragraph()
             run = para.add_run(text)
@@ -120,28 +132,23 @@ class WordGenerator:
             para.paragraph_format.left_indent = Inches(1.5)
             para.paragraph_format.space_after = Pt(6)
 
-    def _build_dual_column_group(self, doc: Document, people_data: list):
-        """Dual column layout: split people into two halves with date padding."""
-        # Calculate max date length for alignment
-        max_date_length = 0
-        for person in people_data:
-            date = person[2]
-            if date:
-                max_date_length = max(max_date_length, len(date))
-
-        # Minimum 6 chars width (e.g. 十二月三十日)
-        if max_date_length < 6:
-            max_date_length = 6
+    def _build_dual_column_group(self, doc: Document, people_data: list, field_names: list[str] | None = None):
+        """Dual column layout: split people into two halves."""
+        # Build text for each entry and find max length for alignment
+        texts = []
+        max_len = 0
+        for entry in people_data:
+            text = self._format_entry_text(entry, field_names)
+            texts.append(text)
+            max_len = max(max_len, len(text))
 
         half = (len(people_data) + 1) // 2
         base_indent = Inches(0.5)
 
         # Column 1
         for idx in range(half):
-            if idx < len(people_data):
-                self._add_dual_column_person(
-                    doc, people_data[idx], max_date_length, base_indent
-                )
+            if idx < len(texts):
+                self._add_dual_column_entry(doc, texts[idx], base_indent)
 
         # Spacer between columns
         spacer = doc.add_paragraph()
@@ -150,23 +157,13 @@ class WordGenerator:
         spacer_run.font.name = self.FONT_NAME
 
         # Column 2
-        for idx in range(half, len(people_data)):
-            self._add_dual_column_person(
-                doc, people_data[idx], max_date_length, base_indent
-            )
+        for idx in range(half, len(texts)):
+            self._add_dual_column_entry(doc, texts[idx], base_indent)
 
-    def _add_dual_column_person(self, doc, person, max_date_length, base_indent):
-        """Add a single person entry in dual column format."""
-        name = person[1] if person[1] else person[0]
-        date = person[2] if person[2] else ""
-
-        date_length = len(date) if date else 0
-        padding_needed = max_date_length - date_length
-        padding = "\u3000" * padding_needed
-        text = f"\u3000\u3000{date}{padding}\u3000{name}"
-
+    def _add_dual_column_entry(self, doc, text: str, base_indent):
+        """Add a single entry in dual column format."""
         para = doc.add_paragraph()
-        run = para.add_run(text)
+        run = para.add_run(f"\u3000\u3000{text}")
         run.font.size = Pt(11)
         run.font.name = self.FONT_NAME
         para.paragraph_format.left_indent = base_indent
