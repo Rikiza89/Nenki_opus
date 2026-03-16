@@ -9,7 +9,7 @@ from memorial_app.core.app_paths import CONFIG_DIR, ERA_CONFIG_PATH
 
 @dataclass
 class Era:
-    name: str          # 令和
+    name: str  # 令和
     abbreviation: str  # R
     start_date: datetime.date
 
@@ -48,11 +48,13 @@ def _load_custom_eras() -> list[Era]:
         data = json.loads(ERA_CONFIG_PATH.read_text(encoding="utf-8"))
         custom = []
         for e in data:
-            custom.append(Era(
-                name=e["name"],
-                abbreviation=e["abbreviation"],
-                start_date=datetime.date.fromisoformat(e["start_date"]),
-            ))
+            custom.append(
+                Era(
+                    name=e["name"],
+                    abbreviation=e["abbreviation"],
+                    start_date=datetime.date.fromisoformat(e["start_date"]),
+                )
+            )
         return custom
     except (json.JSONDecodeError, KeyError, ValueError):
         return []
@@ -62,10 +64,16 @@ def save_custom_eras(eras: list[Era]) -> None:
     """Save custom eras to JSON config."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     data = [
-        {"name": e.name, "abbreviation": e.abbreviation, "start_date": e.start_date.isoformat()}
+        {
+            "name": e.name,
+            "abbreviation": e.abbreviation,
+            "start_date": e.start_date.isoformat(),
+        }
         for e in eras
     ]
-    ERA_CONFIG_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    ERA_CONFIG_PATH.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     reload_eras()
 
 
@@ -107,7 +115,9 @@ def gregorian_to_era(date: datetime.date) -> tuple[Era, int]:
     raise ValueError(f"日付 {date.isoformat()} に該当する元号がありません")
 
 
-def era_to_gregorian(era_name: str, era_year: int, month: int, day: int) -> datetime.date:
+def era_to_gregorian(
+    era_name: str, era_year: int, month: int, day: int
+) -> datetime.date:
     """Convert era name + year + month + day to Gregorian date.
 
     Args:

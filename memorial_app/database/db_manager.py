@@ -30,22 +30,38 @@ class DatabaseManager:
 
     # --- CRUD: Person ---
 
-    def add_person(self, name: str, death_date: str, source_file_path: str | None = None,
-                   attributes: dict[str, str] | None = None) -> Person:
+    def add_person(
+        self,
+        name: str,
+        death_date: str,
+        source_file_path: str | None = None,
+        attributes: dict[str, str] | None = None,
+    ) -> Person:
         """Add a new person with optional dynamic attributes."""
         with self.session() as s:
-            person = Person(name=name.strip(), death_date=death_date, source_file_path=source_file_path)
+            person = Person(
+                name=name.strip(),
+                death_date=death_date,
+                source_file_path=source_file_path,
+            )
             if attributes:
                 for col_name, value in attributes.items():
-                    person.attributes.append(Attribute(column_name=col_name, value=value))
+                    person.attributes.append(
+                        Attribute(column_name=col_name, value=value)
+                    )
             s.add(person)
             s.commit()
             s.refresh(person)
             return person
 
-    def update_person(self, person_id: int, name: str | None = None, death_date: str | None = None,
-                      source_file_path: str | None = ...,
-                      attributes: dict[str, str] | None = None) -> Person | None:
+    def update_person(
+        self,
+        person_id: int,
+        name: str | None = None,
+        death_date: str | None = None,
+        source_file_path: str | None = ...,
+        attributes: dict[str, str] | None = None,
+    ) -> Person | None:
         """Update an existing person. Pass attributes dict to replace all dynamic attributes."""
         with self.session() as s:
             person = s.get(Person, person_id)
@@ -62,7 +78,9 @@ class DatabaseManager:
                 # Replace all attributes
                 person.attributes.clear()
                 for col_name, value in attributes.items():
-                    person.attributes.append(Attribute(column_name=col_name, value=value))
+                    person.attributes.append(
+                        Attribute(column_name=col_name, value=value)
+                    )
             s.commit()
             s.refresh(person)
             return person
@@ -88,11 +106,7 @@ class DatabaseManager:
         """Get persons with pagination."""
         with self.session() as s:
             persons = (
-                s.query(Person)
-                .order_by(Person.id)
-                .offset(offset)
-                .limit(limit)
-                .all()
+                s.query(Person).order_by(Person.id).offset(offset).limit(limit).all()
             )
             for p in persons:
                 _ = p.attributes
@@ -102,7 +116,9 @@ class DatabaseManager:
         with self.session() as s:
             return s.query(func.count(Person.id)).scalar()
 
-    def search_persons(self, query: str, offset: int = 0, limit: int = 100) -> list[Person]:
+    def search_persons(
+        self, query: str, offset: int = 0, limit: int = 100
+    ) -> list[Person]:
         """Search by name (partial match)."""
         with self.session() as s:
             persons = (
@@ -153,7 +169,9 @@ class DatabaseManager:
         # JSON export
         json_backup = BACKUP_DIR / f"memorial_{ts}.json"
         data = self._export_all_json()
-        json_backup.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        json_backup.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
 
         return db_backup, json_backup
 
@@ -188,7 +206,9 @@ class DatabaseManager:
                 )
                 attrs = rec.get("attributes", {})
                 for col_name, value in attrs.items():
-                    person.attributes.append(Attribute(column_name=col_name, value=value))
+                    person.attributes.append(
+                        Attribute(column_name=col_name, value=value)
+                    )
                 s.add(person)
                 count += 1
             s.commit()
@@ -217,7 +237,9 @@ class DatabaseManager:
                     source_file_path=rec.get("source_file_path"),
                 )
                 for col_name, value in rec.get("attributes", {}).items():
-                    person.attributes.append(Attribute(column_name=col_name, value=value))
+                    person.attributes.append(
+                        Attribute(column_name=col_name, value=value)
+                    )
                 s.add(person)
                 count += 1
             s.commit()

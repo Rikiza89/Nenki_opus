@@ -16,9 +16,9 @@ from docx.oxml.ns import qn, nsmap
 from docx.oxml import OxmlElement
 
 # Register extra namespaces needed for text boxes
-nsmap['wps'] = 'http://schemas.microsoft.com/office/word/2010/wordprocessingShape'
-nsmap['wp14'] = 'http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing'
-nsmap['mc'] = 'http://schemas.openxmlformats.org/markup-compatibility/2006'
+nsmap["wps"] = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape"
+nsmap["wp14"] = "http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing"
+nsmap["mc"] = "http://schemas.openxmlformats.org/markup-compatibility/2006"
 
 
 def _display_width(text: str) -> int:
@@ -89,7 +89,9 @@ class WordGenerator:
 
         if single_column:
             self._add_title(doc, title)
-            self._build_single_column_content(doc, sorted_data, field_names, field_widths)
+            self._build_single_column_content(
+                doc, sorted_data, field_names, field_widths
+            )
         else:
             # Two columns on the section
             sectPr = section._sectPr
@@ -133,141 +135,148 @@ class WordGenerator:
 
         # Landscape A4: 11.69" x 8.27", margins 0.5" each side
         # Usable: 10.69" wide x 7.27" tall
-        title_w = int(0.85 * 914400)      # EMU — narrow text box width
-        usable_h = int(7.27 * 914400)     # EMU — full usable height
+        title_w = int(0.85 * 914400)  # EMU — narrow text box width
+        usable_h = int(7.27 * 914400)  # EMU — full usable height
 
-        drawing = OxmlElement('w:drawing')
+        drawing = OxmlElement("w:drawing")
 
         # wp:anchor — floating positioning
-        anchor = OxmlElement('wp:anchor')
+        anchor = OxmlElement("wp:anchor")
         for attr, val in [
-            ('distT', '0'), ('distB', '0'),
-            ('distL', '114300'), ('distR', '114300'),  # ~0.125" gap from columns
-            ('simplePos', '0'), ('relativeHeight', '251659264'),
-            ('behindDoc', '0'), ('locked', '0'),
-            ('layoutInCell', '1'), ('allowOverlap', '1'),
+            ("distT", "0"),
+            ("distB", "0"),
+            ("distL", "114300"),
+            ("distR", "114300"),  # ~0.125" gap from columns
+            ("simplePos", "0"),
+            ("relativeHeight", "251659264"),
+            ("behindDoc", "0"),
+            ("locked", "0"),
+            ("layoutInCell", "1"),
+            ("allowOverlap", "1"),
         ]:
             anchor.set(attr, val)
 
         # Simple position (required but unused)
-        simplePos = OxmlElement('wp:simplePos')
-        simplePos.set('x', '0')
-        simplePos.set('y', '0')
+        simplePos = OxmlElement("wp:simplePos")
+        simplePos.set("x", "0")
+        simplePos.set("y", "0")
         anchor.append(simplePos)
 
         # Horizontal: right side of margin
-        posH = OxmlElement('wp:positionH')
-        posH.set('relativeFrom', 'margin')
-        align_h = OxmlElement('wp:align')
-        align_h.text = 'right'
+        posH = OxmlElement("wp:positionH")
+        posH.set("relativeFrom", "margin")
+        align_h = OxmlElement("wp:align")
+        align_h.text = "right"
         posH.append(align_h)
         anchor.append(posH)
 
         # Vertical: top of margin
-        posV = OxmlElement('wp:positionV')
-        posV.set('relativeFrom', 'margin')
-        offset_v = OxmlElement('wp:posOffset')
-        offset_v.text = '0'
+        posV = OxmlElement("wp:positionV")
+        posV.set("relativeFrom", "margin")
+        offset_v = OxmlElement("wp:posOffset")
+        offset_v.text = "0"
         posV.append(offset_v)
         anchor.append(posV)
 
         # Extent (size) — narrow and tall
-        extent = OxmlElement('wp:extent')
-        extent.set('cx', str(title_w))
-        extent.set('cy', str(usable_h))
+        extent = OxmlElement("wp:extent")
+        extent.set("cx", str(title_w))
+        extent.set("cy", str(usable_h))
         anchor.append(extent)
 
         # Effect extent
-        effectExtent = OxmlElement('wp:effectExtent')
-        for attr in ('l', 't', 'r', 'b'):
-            effectExtent.set(attr, '0')
+        effectExtent = OxmlElement("wp:effectExtent")
+        for attr in ("l", "t", "r", "b"):
+            effectExtent.set(attr, "0")
         anchor.append(effectExtent)
 
         # Wrap: square wrapping so columns flow to the left of the text box
-        wrapSquare = OxmlElement('wp:wrapSquare')
-        wrapSquare.set('wrapText', 'left')
+        wrapSquare = OxmlElement("wp:wrapSquare")
+        wrapSquare.set("wrapText", "left")
         anchor.append(wrapSquare)
 
         # Document properties
-        docPr = OxmlElement('wp:docPr')
-        docPr.set('id', '1')
-        docPr.set('name', 'Title Text Box')
+        docPr = OxmlElement("wp:docPr")
+        docPr.set("id", "1")
+        docPr.set("name", "Title Text Box")
         anchor.append(docPr)
 
         # Graphic frame
-        graphic = OxmlElement('a:graphic')
-        graphicData = OxmlElement('a:graphicData')
-        graphicData.set('uri', 'http://schemas.microsoft.com/office/word/2010/wordprocessingShape')
+        graphic = OxmlElement("a:graphic")
+        graphicData = OxmlElement("a:graphicData")
+        graphicData.set(
+            "uri", "http://schemas.microsoft.com/office/word/2010/wordprocessingShape"
+        )
         graphic.append(graphicData)
 
         # Word processing shape
-        wsp = OxmlElement('wps:wsp')
+        wsp = OxmlElement("wps:wsp")
 
         # Shape properties — non-visual
-        cNvSpPr = OxmlElement('wps:cNvSpPr')
-        cNvSpPr.set('txBox', '1')
+        cNvSpPr = OxmlElement("wps:cNvSpPr")
+        cNvSpPr.set("txBox", "1")
         wsp.append(cNvSpPr)
 
         # Shape properties — geometry, no fill, no border
-        spPr = OxmlElement('wps:spPr')
+        spPr = OxmlElement("wps:spPr")
 
-        xfrm = OxmlElement('a:xfrm')
-        off = OxmlElement('a:off')
-        off.set('x', '0')
-        off.set('y', '0')
+        xfrm = OxmlElement("a:xfrm")
+        off = OxmlElement("a:off")
+        off.set("x", "0")
+        off.set("y", "0")
         xfrm.append(off)
-        ext = OxmlElement('a:ext')
-        ext.set('cx', str(title_w))
-        ext.set('cy', str(usable_h))
+        ext = OxmlElement("a:ext")
+        ext.set("cx", str(title_w))
+        ext.set("cy", str(usable_h))
         xfrm.append(ext)
         spPr.append(xfrm)
 
-        prstGeom = OxmlElement('a:prstGeom')
-        prstGeom.set('prst', 'rect')
-        prstGeom.append(OxmlElement('a:avLst'))
+        prstGeom = OxmlElement("a:prstGeom")
+        prstGeom.set("prst", "rect")
+        prstGeom.append(OxmlElement("a:avLst"))
         spPr.append(prstGeom)
 
-        spPr.append(OxmlElement('a:noFill'))
+        spPr.append(OxmlElement("a:noFill"))
 
-        ln = OxmlElement('a:ln')
-        ln.append(OxmlElement('a:noFill'))
+        ln = OxmlElement("a:ln")
+        ln.append(OxmlElement("a:noFill"))
         spPr.append(ln)
 
         wsp.append(spPr)
 
         # Text box content
-        txbx = OxmlElement('wps:txbx')
-        txbxContent = OxmlElement('w:txbxContent')
+        txbx = OxmlElement("wps:txbx")
+        txbxContent = OxmlElement("w:txbxContent")
 
         # Title paragraph inside text box
-        tp = OxmlElement('w:p')
-        tpPr = OxmlElement('w:pPr')
-        jc = OxmlElement('w:jc')
-        jc.set(qn('w:val'), 'center')
+        tp = OxmlElement("w:p")
+        tpPr = OxmlElement("w:pPr")
+        jc = OxmlElement("w:jc")
+        jc.set(qn("w:val"), "center")
         tpPr.append(jc)
         tp.append(tpPr)
 
-        tr = OxmlElement('w:r')
-        trPr = OxmlElement('w:rPr')
+        tr = OxmlElement("w:r")
+        trPr = OxmlElement("w:rPr")
         # Bold
-        trPr.append(OxmlElement('w:b'))
+        trPr.append(OxmlElement("w:b"))
         # Font size: 36pt = 72 half-points
-        sz = OxmlElement('w:sz')
-        sz.set(qn('w:val'), '72')
+        sz = OxmlElement("w:sz")
+        sz.set(qn("w:val"), "72")
         trPr.append(sz)
-        szCs = OxmlElement('w:szCs')
-        szCs.set(qn('w:val'), '72')
+        szCs = OxmlElement("w:szCs")
+        szCs.set(qn("w:val"), "72")
         trPr.append(szCs)
         # Font name
-        rFonts = OxmlElement('w:rFonts')
-        rFonts.set(qn('w:ascii'), self.FONT_NAME)
-        rFonts.set(qn('w:eastAsia'), self.FONT_NAME)
-        rFonts.set(qn('w:hAnsi'), self.FONT_NAME)
+        rFonts = OxmlElement("w:rFonts")
+        rFonts.set(qn("w:ascii"), self.FONT_NAME)
+        rFonts.set(qn("w:eastAsia"), self.FONT_NAME)
+        rFonts.set(qn("w:hAnsi"), self.FONT_NAME)
         trPr.append(rFonts)
         tr.append(trPr)
 
-        tt = OxmlElement('w:t')
-        tt.set(qn('xml:space'), 'preserve')
+        tt = OxmlElement("w:t")
+        tt.set(qn("xml:space"), "preserve")
         tt.text = title
         tr.append(tt)
         tp.append(tr)
@@ -277,14 +286,14 @@ class WordGenerator:
         wsp.append(txbx)
 
         # Body properties — vertical text (top-to-bottom), centered
-        bodyPr = OxmlElement('wps:bodyPr')
-        bodyPr.set('vert', 'eaVert')
-        bodyPr.set('wrap', 'square')
-        bodyPr.set('lIns', '45720')
-        bodyPr.set('tIns', '91440')
-        bodyPr.set('rIns', '45720')
-        bodyPr.set('bIns', '91440')
-        bodyPr.set('anchor', 'ctr')
+        bodyPr = OxmlElement("wps:bodyPr")
+        bodyPr.set("vert", "eaVert")
+        bodyPr.set("wrap", "square")
+        bodyPr.set("lIns", "45720")
+        bodyPr.set("tIns", "91440")
+        bodyPr.set("rIns", "45720")
+        bodyPr.set("bIns", "91440")
+        bodyPr.set("anchor", "ctr")
         wsp.append(bodyPr)
 
         graphicData.append(wsp)
@@ -307,7 +316,9 @@ class WordGenerator:
         textDirection.set(qn("w:val"), "tbRl")
         sectPr.append(textDirection)
 
-    def _compute_field_widths(self, all_entries: list, field_names: list[str] | None) -> list[int]:
+    def _compute_field_widths(
+        self, all_entries: list, field_names: list[str] | None
+    ) -> list[int]:
         """Compute the max display width for each field position across all entries."""
         if not all_entries:
             return []
@@ -335,8 +346,11 @@ class WordGenerator:
         return self.FIELD_SEP.join(parts)
 
     def _build_single_column_content(
-        self, doc: Document, sorted_data: list,
-        field_names: list[str] | None, field_widths: list[int],
+        self,
+        doc: Document,
+        sorted_data: list,
+        field_names: list[str] | None,
+        field_widths: list[int],
     ):
         """Single column layout: each nenki group with subtitle + entries."""
         for key, people_data in sorted_data:
@@ -364,7 +378,10 @@ class WordGenerator:
             doc.add_paragraph()
 
     def _build_dual_column_content(
-        self, doc: Document, sorted_data: list, field_widths: list[int],
+        self,
+        doc: Document,
+        sorted_data: list,
+        field_widths: list[int],
     ):
         """Dual column layout: data flows into Word's native 2 columns."""
         for key, people_data in sorted_data:
@@ -396,6 +413,7 @@ class WordGenerator:
         """Try to convert .docx to .pdf using docx2pdf."""
         try:
             from docx2pdf import convert
+
             pdf_path = docx_path.with_suffix(".pdf")
             convert(str(docx_path), str(pdf_path))
         except Exception:

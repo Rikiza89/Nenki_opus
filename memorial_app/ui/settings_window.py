@@ -3,9 +3,21 @@
 from pathlib import Path
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QGroupBox, QFormLayout, QComboBox, QMessageBox, QFileDialog,
-    QLineEdit, QDateEdit, QTableWidget, QTableWidgetItem, QHeaderView,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QGroupBox,
+    QFormLayout,
+    QComboBox,
+    QMessageBox,
+    QFileDialog,
+    QLineEdit,
+    QDateEdit,
+    QTableWidget,
+    QTableWidgetItem,
+    QHeaderView,
 )
 from PySide6.QtCore import Qt, QDate
 
@@ -49,7 +61,9 @@ class SettingsPage(QWidget):
         # Database Reset
         reset_group = QGroupBox("データベースリセット")
         reset_layout = QHBoxLayout(reset_group)
-        reset_label = QLabel("全データを削除してデータベースを初期化します。バックアップが自動作成されます。")
+        reset_label = QLabel(
+            "全データを削除してデータベースを初期化します。バックアップが自動作成されます。"
+        )
         reset_label.setStyleSheet("color: #e74c3c;")
         reset_layout.addWidget(reset_label, 1)
         reset_btn = QPushButton("リセット実行")
@@ -86,12 +100,16 @@ class SettingsPage(QWidget):
 
         era_btn_layout = QHBoxLayout()
         add_era_btn = QPushButton("元号追加")
-        add_era_btn.setStyleSheet("background: #27ae60; color: white; padding: 6px 16px;")
+        add_era_btn.setStyleSheet(
+            "background: #27ae60; color: white; padding: 6px 16px;"
+        )
         add_era_btn.clicked.connect(self._add_era)
         era_btn_layout.addWidget(add_era_btn)
 
         del_era_btn = QPushButton("選択削除")
-        del_era_btn.setStyleSheet("background: #e74c3c; color: white; padding: 6px 16px;")
+        del_era_btn.setStyleSheet(
+            "background: #e74c3c; color: white; padding: 6px 16px;"
+        )
         del_era_btn.clicked.connect(self._delete_era)
         era_btn_layout.addWidget(del_era_btn)
         era_btn_layout.addStretch()
@@ -115,7 +133,8 @@ class SettingsPage(QWidget):
         try:
             db_path, json_path = self.db.backup()
             QMessageBox.information(
-                self, "バックアップ完了",
+                self,
+                "バックアップ完了",
                 f"バックアップを作成しました:\n{db_path}\n{json_path}",
             )
         except Exception as e:
@@ -123,25 +142,32 @@ class SettingsPage(QWidget):
 
     def _restore(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "復元するJSONファイルを選択", "", "JSON (*.json)",
+            self,
+            "復元するJSONファイルを選択",
+            "",
+            "JSON (*.json)",
         )
         if not path:
             return
         reply = QMessageBox.question(
-            self, "復元確認",
+            self,
+            "復元確認",
             "JSONファイルからデータを復元します。\n既存データに追加されます。続行しますか？",
         )
         if reply != QMessageBox.Yes:
             return
         try:
             count = self.db.restore_from_json(Path(path))
-            QMessageBox.information(self, "復元完了", f"{count}件のデータを復元しました。")
+            QMessageBox.information(
+                self, "復元完了", f"{count}件のデータを復元しました。"
+            )
         except Exception as e:
             QMessageBox.critical(self, "エラー", f"復元に失敗しました:\n{e}")
 
     def _reset_db(self):
         reply = QMessageBox.warning(
-            self, "リセット確認",
+            self,
+            "リセット確認",
             "本当にデータベースをリセットしますか？\n全データが削除されます。\n（バックアップは自動作成されます）",
             QMessageBox.Yes | QMessageBox.No,
         )
