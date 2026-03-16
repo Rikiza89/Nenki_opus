@@ -119,8 +119,8 @@ class DashboardPage(QWidget):
 
         # Show sample data hint when database is empty
         if total == 0:
-            from pathlib import Path
-            sample_path = Path.home() / ".nenki_app" / "example_dataset.xlsx"
+            from memorial_app.core.app_paths import EXAMPLE_FILE
+            sample_path = EXAMPLE_FILE
             if sample_path.exists():
                 self.sample_hint.setText(
                     f"サンプルデータが利用可能です。\n"

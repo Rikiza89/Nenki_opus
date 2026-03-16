@@ -9,26 +9,19 @@ if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
 from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import Qt
 
+from memorial_app.core.app_paths import ensure_dirs, EXAMPLE_FILE
 from memorial_app.database.db_manager import DatabaseManager
 from memorial_app.ui.main_window import MainWindow
 
 
-_APP_DIR = Path.home() / ".nenki_app"
-_EXAMPLE_FILE = _APP_DIR / "example_dataset.xlsx"
-
-
 def _generate_example_excel():
     """Generate example Excel dataset on first run."""
-    if _EXAMPLE_FILE.exists():
+    if EXAMPLE_FILE.exists():
         return
-
-    _APP_DIR.mkdir(parents=True, exist_ok=True)
-
     try:
         from memorial_app.scripts.generate_example_data import generate_example
-        generate_example(_EXAMPLE_FILE)
+        generate_example(EXAMPLE_FILE)
     except Exception:
         pass
 
@@ -37,6 +30,9 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("年忌管理")
     app.setOrganizationName("寺院管理システム")
+
+    # Create all data directories
+    ensure_dirs()
 
     # Initialize database
     db_manager = DatabaseManager()

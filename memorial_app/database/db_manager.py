@@ -9,16 +9,12 @@ from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker, Session
 
 from memorial_app.database.models import Base, Person, Attribute
-
-# Default database location
-_APP_DIR = Path.home() / ".nenki_app"
-_DB_PATH = _APP_DIR / "memorial.db"
-_BACKUP_DIR = _APP_DIR / "backups"
+from memorial_app.core.app_paths import DB_PATH, BACKUP_DIR
 
 
 class DatabaseManager:
     def __init__(self, db_path: Path | None = None):
-        self.db_path = db_path or _DB_PATH
+        self.db_path = db_path or DB_PATH
         self.engine = None
         self._Session = None
 
@@ -147,15 +143,15 @@ class DatabaseManager:
 
     def backup(self) -> tuple[Path, Path]:
         """Create backup: SQLite copy + JSON export. Returns (db_backup_path, json_backup_path)."""
-        _BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+        BACKUP_DIR.mkdir(parents=True, exist_ok=True)
         ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
         # SQLite file copy
-        db_backup = _BACKUP_DIR / f"memorial_{ts}.db"
+        db_backup = BACKUP_DIR / f"memorial_{ts}.db"
         shutil.copy2(self.db_path, db_backup)
 
         # JSON export
-        json_backup = _BACKUP_DIR / f"memorial_{ts}.json"
+        json_backup = BACKUP_DIR / f"memorial_{ts}.json"
         data = self._export_all_json()
         json_backup.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 

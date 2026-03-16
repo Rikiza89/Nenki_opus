@@ -2,12 +2,9 @@
 
 import json
 import datetime
-from pathlib import Path
 from dataclasses import dataclass
 
-# Default config path for custom eras
-_CONFIG_DIR = Path.home() / ".nenki_app"
-_ERA_CONFIG_PATH = _CONFIG_DIR / "custom_eras.json"
+from memorial_app.core.app_paths import CONFIG_DIR, ERA_CONFIG_PATH
 
 
 @dataclass
@@ -45,10 +42,10 @@ _eras: list[Era] = []
 
 def _load_custom_eras() -> list[Era]:
     """Load user-defined custom eras from JSON config."""
-    if not _ERA_CONFIG_PATH.exists():
+    if not ERA_CONFIG_PATH.exists():
         return []
     try:
-        data = json.loads(_ERA_CONFIG_PATH.read_text(encoding="utf-8"))
+        data = json.loads(ERA_CONFIG_PATH.read_text(encoding="utf-8"))
         custom = []
         for e in data:
             custom.append(Era(
@@ -63,12 +60,12 @@ def _load_custom_eras() -> list[Era]:
 
 def save_custom_eras(eras: list[Era]) -> None:
     """Save custom eras to JSON config."""
-    _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     data = [
         {"name": e.name, "abbreviation": e.abbreviation, "start_date": e.start_date.isoformat()}
         for e in eras
     ]
-    _ERA_CONFIG_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    ERA_CONFIG_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     reload_eras()
 
 
