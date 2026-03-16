@@ -76,21 +76,24 @@ class WordGenerator:
             rPr.insert(0, rFonts)
         rFonts.set(qn("w:eastAsia"), self.FONT_NAME)
 
-        # Main title
+        # Main title (full page width, single column)
         title_para = doc.add_paragraph()
         title_run = title_para.add_run(title)
         title_run.font.size = Pt(36)
         title_run.font.bold = True
         title_run.font.name = self.FONT_NAME
         title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        title_para.paragraph_format.space_after = Pt(0)
 
         if not single_column:
-            # Set 2 columns on the same section (no section break)
-            sectPr = section._sectPr
+            # Continuous section break: title stays full-width,
+            # content below flows into 2 columns on the same page
+            new_section = doc.add_section(2)  # WD_SECTION_START.CONTINUOUS
+            self._setup_section(new_section)
             cols = OxmlElement("w:cols")
             cols.set(qn("w:num"), "2")
-            cols.set(qn("w:space"), "720")  # space between columns in twips
-            sectPr.append(cols)
+            cols.set(qn("w:space"), "720")
+            new_section._sectPr.append(cols)
 
         # Compute global field widths across ALL groups for consistent alignment
         all_entries = []
