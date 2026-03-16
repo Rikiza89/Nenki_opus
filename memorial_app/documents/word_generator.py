@@ -10,7 +10,7 @@ from pathlib import Path
 import unicodedata
 
 from docx import Document
-from docx.shared import Pt, Inches
+from docx.shared import Pt, Inches, Emu
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
@@ -76,24 +76,14 @@ class WordGenerator:
             rPr.insert(0, rFonts)
         rFonts.set(qn("w:eastAsia"), self.FONT_NAME)
 
-        # Main title (full page width, single column)
+        # Main title (always full page width)
         title_para = doc.add_paragraph()
         title_run = title_para.add_run(title)
         title_run.font.size = Pt(36)
         title_run.font.bold = True
         title_run.font.name = self.FONT_NAME
         title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        title_para.paragraph_format.space_after = Pt(0)
-
-        if not single_column:
-            # Continuous section break: title stays full-width,
-            # content below flows into 2 columns on the same page
-            new_section = doc.add_section(2)  # WD_SECTION_START.CONTINUOUS
-            self._setup_section(new_section)
-            cols = OxmlElement("w:cols")
-            cols.set(qn("w:num"), "2")
-            cols.set(qn("w:space"), "720")
-            new_section._sectPr.append(cols)
+        title_para.paragraph_format.space_after = Pt(4)
 
         # Compute global field widths across ALL groups for consistent alignment
         all_entries = []
@@ -101,31 +91,10 @@ class WordGenerator:
             all_entries.extend(people_data)
         field_widths = self._compute_field_widths(all_entries, field_names)
 
-        # Each nenki group
-        for key, people_data in sorted_data:
-            nenki_name = key.split("|")[0]
-
-            if single_column:
-                subtitle = doc.add_paragraph()
-                subtitle_run = subtitle.add_run(nenki_name)
-                subtitle_run.font.size = Pt(28)
-                subtitle_run.font.bold = True
-                subtitle_run.font.name = self.FONT_NAME
-                subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                subtitle.paragraph_format.space_after = Pt(12)
-                self._build_single_column_group(doc, people_data, field_names, field_widths)
-            else:
-                subtitle = doc.add_paragraph()
-                subtitle_run = subtitle.add_run(nenki_name)
-                subtitle_run.font.size = Pt(16)
-                subtitle_run.font.bold = True
-                subtitle_run.font.name = self.FONT_NAME
-                subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                subtitle.paragraph_format.space_after = Pt(8)
-                self._build_dual_column_group(doc, people_data, field_widths)
-
-            # Space between groups
-            doc.add_paragraph()
+        if single_column:
+            self._build_single_column_content(doc, sorted_data, field_names, field_widths)
+        else:
+            self._build_dual_column_content(doc, sorted_data, field_widths)
 
         doc.save(str(output_path))
 
@@ -174,33 +143,181 @@ class WordGenerator:
             parts.append(text)
         return self.FIELD_SEP.join(parts)
 
-    def _build_single_column_group(
-        self, doc: Document, people_data: list,
+    def _build_single_column_content(
+        self, doc: Document, sorted_data: list,
         field_names: list[str] | None, field_widths: list[int],
     ):
-        """Single column layout: each person on one line, fields aligned."""
-        for entry in people_data:
-            text = self.FIELD_SEP + self._format_aligned_entry(entry, field_widths)
+        """Single column layout: each nenki group with subtitle + entries."""
+        for key, people_data in sorted_data:
+            nenki_name = key.split("|")[0]
 
-            para = doc.add_paragraph()
-            run = para.add_run(text)
-            run.font.size = Pt(18)
-            run.font.name = self.FONT_NAME
-            para.paragraph_format.left_indent = Inches(1.5)
-            para.paragraph_format.space_after = Pt(8)
+            subtitle = doc.add_paragraph()
+            subtitle_run = subtitle.add_run(nenki_name)
+            subtitle_run.font.size = Pt(28)
+            subtitle_run.font.bold = True
+            subtitle_run.font.name = self.FONT_NAME
+            subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            subtitle.paragraph_format.space_after = Pt(12)
 
-    def _build_dual_column_group(
-        self, doc: Document, people_data: list, field_widths: list[int],
+            for entry in people_data:
+                text = self.FIELD_SEP + self._format_aligned_entry(entry, field_widths)
+                para = doc.add_paragraph()
+                run = para.add_run(text)
+                run.font.size = Pt(18)
+                run.font.name = self.FONT_NAME
+                para.paragraph_format.left_indent = Inches(1.5)
+                para.paragraph_format.space_after = Pt(8)
+
+            # Space between groups
+            doc.add_paragraph()
+
+    def _build_dual_column_content(
+        self, doc: Document, sorted_data: list, field_widths: list[int],
     ):
-        """Dual column layout: entries flow naturally into Word's native columns."""
-        for entry in people_data:
-            text = self.FIELD_SEP + self._format_aligned_entry(entry, field_widths)
-            para = doc.add_paragraph()
-            run = para.add_run(text)
-            run.font.size = Pt(11)
-            run.font.name = self.FONT_NAME
-            para.paragraph_format.left_indent = Inches(0.5)
-            para.paragraph_format.space_after = Pt(4)
+        """Dual column layout using a borderless table with 2 cells.
+
+        Splits nenki groups across two columns by total entry count,
+        keeping each group intact in one column.
+        """
+        # Count total entries per group to split evenly
+        group_sizes = []
+        for key, people_data in sorted_data:
+            # +1 for the subtitle line
+            group_sizes.append(len(people_data) + 1)
+
+        total = sum(group_sizes)
+        half = total / 2
+
+        # Find split point: keep groups intact
+        running = 0
+        split_idx = len(sorted_data)
+        for i, size in enumerate(group_sizes):
+            running += size
+            if running >= half:
+                split_idx = i + 1
+                break
+
+        col1_groups = sorted_data[:split_idx]
+        col2_groups = sorted_data[split_idx:]
+
+        # Create borderless table with 1 row, 2 cells
+        usable_width = Inches(11.69) - Inches(1.0)  # page width minus margins
+        col_width = usable_width // 2
+        table = doc.add_table(rows=1, cols=2)
+        table.autofit = False
+
+        # Remove all borders
+        tbl = table._tbl
+        tblPr = tbl.tblPr if tbl.tblPr is not None else OxmlElement("w:tblPr")
+        borders = OxmlElement("w:tblBorders")
+        for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+            el = OxmlElement(f"w:{ edge}")
+            el.set(qn("w:val"), "none")
+            el.set(qn("w:sz"), "0")
+            el.set(qn("w:space"), "0")
+            el.set(qn("w:color"), "auto")
+            borders.append(el)
+        tblPr.append(borders)
+
+        # Set column widths
+        for col_idx in range(2):
+            cell = table.cell(0, col_idx)
+            tc = cell._tc
+            tcPr = tc.get_or_add_tcPr()
+            tcW = OxmlElement("w:tcW")
+            tcW.set(qn("w:w"), str(int(col_width.emu / 635)))  # EMU to twips
+            tcW.set(qn("w:type"), "dxa")
+            tcPr.append(tcW)
+
+        # Fill column 1
+        self._fill_table_cell(table.cell(0, 0), col1_groups, field_widths)
+        # Fill column 2
+        self._fill_table_cell(table.cell(0, 1), col2_groups, field_widths)
+
+    def _fill_table_cell(self, cell, groups: list, field_widths: list[int]):
+        """Fill a table cell with nenki groups (subtitle + entries)."""
+        # Remove the default empty paragraph
+        for p in cell.paragraphs:
+            p._element.getparent().remove(p._element)
+
+        for group_idx, (key, people_data) in enumerate(groups):
+            nenki_name = key.split("|")[0]
+
+            # Subtitle
+            subtitle = OxmlElement("w:p")
+            subtitle_pPr = OxmlElement("w:pPr")
+            subtitle_jc = OxmlElement("w:jc")
+            subtitle_jc.set(qn("w:val"), "center")
+            subtitle_pPr.append(subtitle_jc)
+
+            # Space after subtitle
+            spacing = OxmlElement("w:spacing")
+            spacing.set(qn("w:after"), "160")  # ~8pt
+            subtitle_pPr.append(spacing)
+
+            subtitle.append(subtitle_pPr)
+            subtitle_run = OxmlElement("w:r")
+            subtitle_rPr = OxmlElement("w:rPr")
+            subtitle_sz = OxmlElement("w:sz")
+            subtitle_sz.set(qn("w:val"), "32")  # 16pt * 2 = 32 half-points
+            subtitle_rPr.append(subtitle_sz)
+            subtitle_b = OxmlElement("w:b")
+            subtitle_rPr.append(subtitle_b)
+            subtitle_font = OxmlElement("w:rFonts")
+            subtitle_font.set(qn("w:ascii"), self.FONT_NAME)
+            subtitle_font.set(qn("w:eastAsia"), self.FONT_NAME)
+            subtitle_font.set(qn("w:hAnsi"), self.FONT_NAME)
+            subtitle_rPr.append(subtitle_font)
+            subtitle_run.append(subtitle_rPr)
+            subtitle_text = OxmlElement("w:t")
+            subtitle_text.text = nenki_name
+            subtitle_run.append(subtitle_text)
+            subtitle.append(subtitle_run)
+            cell._tc.append(subtitle)
+
+            # Entries
+            for entry in people_data:
+                text = self.FIELD_SEP + self._format_aligned_entry(entry, field_widths)
+
+                para = OxmlElement("w:p")
+                pPr = OxmlElement("w:pPr")
+                # Left indent
+                ind = OxmlElement("w:ind")
+                ind.set(qn("w:left"), "720")  # ~0.5 inch
+                pPr.append(ind)
+                # Space after
+                sp = OxmlElement("w:spacing")
+                sp.set(qn("w:after"), "80")  # ~4pt
+                pPr.append(sp)
+                para.append(pPr)
+
+                run = OxmlElement("w:r")
+                rPr = OxmlElement("w:rPr")
+                sz = OxmlElement("w:sz")
+                sz.set(qn("w:val"), "22")  # 11pt * 2 = 22 half-points
+                rPr.append(sz)
+                font = OxmlElement("w:rFonts")
+                font.set(qn("w:ascii"), self.FONT_NAME)
+                font.set(qn("w:eastAsia"), self.FONT_NAME)
+                font.set(qn("w:hAnsi"), self.FONT_NAME)
+                rPr.append(font)
+                run.append(rPr)
+                t = OxmlElement("w:t")
+                t.set(qn("xml:space"), "preserve")
+                t.text = text
+                run.append(t)
+                para.append(run)
+                cell._tc.append(para)
+
+            # Spacer between groups (except after last)
+            if group_idx < len(groups) - 1:
+                spacer = OxmlElement("w:p")
+                sp_pPr = OxmlElement("w:pPr")
+                sp_spacing = OxmlElement("w:spacing")
+                sp_spacing.set(qn("w:after"), "0")
+                sp_pPr.append(sp_spacing)
+                spacer.append(sp_pPr)
+                cell._tc.append(spacer)
 
     def _convert_to_pdf(self, docx_path: Path):
         """Try to convert .docx to .pdf using docx2pdf."""
