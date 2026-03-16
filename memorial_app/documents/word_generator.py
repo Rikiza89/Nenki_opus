@@ -94,11 +94,8 @@ class WordGenerator:
             cols.set(qn("w:space"), "720")
             sectPr.append(cols)
 
-            # Split title across both columns so it looks full-width
-            self._add_split_title(doc, title)
-
-            # Data flows naturally into 2 columns
-            self._build_dual_column_content(doc, sorted_data, field_widths)
+            # Build: title_part1 → col1 data → col break → title_part2 → col2 data
+            self._build_dual_column_content(doc, title, sorted_data, field_widths)
 
         doc.save(str(output_path))
 
@@ -115,55 +112,31 @@ class WordGenerator:
         title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
         title_para.paragraph_format.space_after = Pt(4)
 
-    def _add_split_title(self, doc: Document, title: str):
-        """Split title into two paragraphs across 2 columns.
-
-        In tategaki 2-column mode, each paragraph fills one column.
-        Splitting the title makes it span both columns, looking like
-        one continuous full-width title.
-        """
-        # Split on " - " if present, otherwise split at midpoint
+    def _split_title(self, title: str) -> tuple[str, str]:
+        """Split title into two parts for dual-column display."""
         if " - " in title:
-            part1, part2 = title.split(" - ", 1)
-        elif "　" in title:
-            # Full-width space
-            idx = title.index("　")
-            part1 = title[:idx]
-            part2 = title[idx + 1:]
-        else:
-            mid = len(title) // 2
-            part1 = title[:mid]
-            part2 = title[mid:]
+            return title.split(" - ", 1)
+        if "\u3000" in title:
+            idx = title.index("\u3000")
+            return title[:idx], title[idx + 1:]
+        mid = len(title) // 2
+        return title[:mid], title[mid:]
 
-        # First half in column 1
-        para1 = doc.add_paragraph()
-        run1 = para1.add_run(part1)
-        run1.font.size = Pt(36)
-        run1.font.bold = True
-        run1.font.name = self.FONT_NAME
-        para1.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        para1.paragraph_format.space_after = Pt(0)
+    def _split_groups(self, sorted_data: list) -> tuple[list, list]:
+        """Split nenki groups into two halves by entry count, keeping groups intact."""
+        group_sizes = [len(people_data) + 1 for _, people_data in sorted_data]
+        total = sum(group_sizes)
+        half = total / 2
 
-        # Column break to push second half into column 2
-        run_break = para1.add_run()
-        br = OxmlElement("w:br")
-        br.set(qn("w:type"), "column")
-        run_break._element.append(br)
+        running = 0
+        split_idx = len(sorted_data)
+        for i, size in enumerate(group_sizes):
+            running += size
+            if running >= half:
+                split_idx = i + 1
+                break
 
-        # Second half in column 2
-        para2 = doc.add_paragraph()
-        run2 = para2.add_run(part2)
-        run2.font.size = Pt(36)
-        run2.font.bold = True
-        run2.font.name = self.FONT_NAME
-        para2.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        para2.paragraph_format.space_after = Pt(0)
-
-        # Column break to start data from column 1 again
-        run_break2 = para2.add_run()
-        br2 = OxmlElement("w:br")
-        br2.set(qn("w:type"), "column")
-        run_break2._element.append(br2)
+        return sorted_data[:split_idx], sorted_data[split_idx:]
 
     def _setup_section(self, section):
         """Configure a section with landscape A4, tategaki, and margins."""
@@ -235,11 +208,20 @@ class WordGenerator:
             # Space between groups
             doc.add_paragraph()
 
-    def _build_dual_column_content(
-        self, doc: Document, sorted_data: list, field_widths: list[int],
-    ):
-        """Dual column layout: data flows into Word's native 2 columns."""
-        for key, people_data in sorted_data:
+    def _add_column_title(self, doc: Document, text: str):
+        """Add a title paragraph for one column in dual-column mode."""
+        para = doc.add_paragraph()
+        run = para.add_run(text)
+        run.font.size = Pt(36)
+        run.font.bold = True
+        run.font.name = self.FONT_NAME
+        para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        para.paragraph_format.space_after = Pt(4)
+        return para
+
+    def _add_column_groups(self, doc: Document, groups: list, field_widths: list[int]):
+        """Add nenki groups (subtitle + entries) for one column."""
+        for key, people_data in groups:
             nenki_name = key.split("|")[0]
 
             subtitle = doc.add_paragraph()
@@ -261,6 +243,33 @@ class WordGenerator:
 
             # Space between groups
             doc.add_paragraph()
+
+    def _add_column_break(self, doc: Document):
+        """Insert a column break at the end of the last paragraph."""
+        # Add column break to the last paragraph
+        last_para = doc.paragraphs[-1]
+        run = last_para.add_run()
+        br = OxmlElement("w:br")
+        br.set(qn("w:type"), "column")
+        run._element.append(br)
+
+    def _build_dual_column_content(
+        self, doc: Document, title: str, sorted_data: list, field_widths: list[int],
+    ):
+        """Dual column layout: title_part1 → col1 data → break → title_part2 → col2 data."""
+        title_part1, title_part2 = self._split_title(title)
+        col1_groups, col2_groups = self._split_groups(sorted_data)
+
+        # Column 1: title part 1 + data
+        self._add_column_title(doc, title_part1)
+        self._add_column_groups(doc, col1_groups, field_widths)
+
+        # Column break to move to column 2
+        self._add_column_break(doc)
+
+        # Column 2: title part 2 + data
+        self._add_column_title(doc, title_part2)
+        self._add_column_groups(doc, col2_groups, field_widths)
 
     def _convert_to_pdf(self, docx_path: Path):
         """Try to convert .docx to .pdf using docx2pdf."""
