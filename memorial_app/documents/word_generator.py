@@ -178,51 +178,43 @@ class WordGenerator:
     ):
         """Dual column layout: split people into two halves, fields aligned.
 
-        The subtitle is centered relative to the column entry width, not the page.
+        One subtitle per group, centered relative to the entry line width.
         """
         half = (len(people_data) + 1) // 2
         base_indent = Inches(0.5)
 
         # Compute total entry line width (in display chars) for centering the subtitle
-        # entry = separator + field1 + sep + field2 + ... (same as _format_aligned_entry)
-        entry_width = sum(field_widths) + 2  # +2 for leading separator
+        # entry line = leading sep(2) + field1 + sep(2) + field2 + ...
+        entry_width = 2  # leading separator
+        entry_width += sum(field_widths)
         if len(field_widths) > 1:
-            entry_width += (len(field_widths) - 1) * 2  # separators between fields (each \u3000 = width 2)
+            entry_width += (len(field_widths) - 1) * 2  # inter-field separators
 
         # Center nenki_name within entry_width using full-width space padding
         name_width = _display_width(nenki_name)
-        left_pad = (entry_width - name_width) // 2 // 2  # divide by 2 because each \u3000 = width 2
-        centered_name = "\u3000" * max(left_pad, 0) + nenki_name
+        total_pad = entry_width - name_width
+        left_pad_chars = max(total_pad // 2 // 2, 0)  # full-width spaces (each = width 2)
+        centered_name = "\u3000" * left_pad_chars + nenki_name
 
-        # Column 1 subtitle
-        subtitle1 = doc.add_paragraph()
-        s1_run = subtitle1.add_run(centered_name)
-        s1_run.font.size = Pt(16)
-        s1_run.font.bold = True
-        s1_run.font.name = self.FONT_NAME
-        subtitle1.paragraph_format.left_indent = base_indent
-        subtitle1.paragraph_format.space_after = Pt(8)
+        # Single subtitle for this group
+        subtitle = doc.add_paragraph()
+        sub_run = subtitle.add_run(centered_name)
+        sub_run.font.size = Pt(16)
+        sub_run.font.bold = True
+        sub_run.font.name = self.FONT_NAME
+        subtitle.paragraph_format.left_indent = base_indent
+        subtitle.paragraph_format.space_after = Pt(8)
 
         # Column 1 entries
         for idx in range(half):
-            if idx < len(people_data):
-                text = self.FIELD_SEP + self._format_aligned_entry(people_data[idx], field_widths)
-                self._add_dual_column_entry(doc, text, base_indent)
+            text = self.FIELD_SEP + self._format_aligned_entry(people_data[idx], field_widths)
+            self._add_dual_column_entry(doc, text, base_indent)
 
         # Spacer between columns
         spacer = doc.add_paragraph()
         spacer_run = spacer.add_run("\u3000\u3000\u3000")
         spacer_run.font.size = Pt(11)
         spacer_run.font.name = self.FONT_NAME
-
-        # Column 2 subtitle
-        subtitle2 = doc.add_paragraph()
-        s2_run = subtitle2.add_run(centered_name)
-        s2_run.font.size = Pt(16)
-        s2_run.font.bold = True
-        s2_run.font.name = self.FONT_NAME
-        subtitle2.paragraph_format.left_indent = base_indent
-        subtitle2.paragraph_format.space_after = Pt(8)
 
         # Column 2 entries
         for idx in range(half, len(people_data)):
