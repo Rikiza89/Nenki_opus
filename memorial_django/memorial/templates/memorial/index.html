@@ -5,1163 +5,973 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>年忌法要 管理システム</title>
 <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 <style>
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; color: #222; font-size: 14px; }
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Meiryo','Hiragino Kaku Gothic Pro','Segoe UI',sans-serif;background:#eef0f4;color:#222;font-size:15px}
 
-/* Layout */
-.app { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
-.topbar { background: #1a1a2e; color: #e0e0e0; padding: 0 20px; display: flex; align-items: center; gap: 16px; height: 48px; flex-shrink: 0; }
-.topbar h1 { font-size: 16px; font-weight: 600; color: #fff; white-space: nowrap; }
-.nav-tabs { display: flex; gap: 4px; }
-.nav-tab { padding: 6px 16px; border-radius: 4px 4px 0 0; cursor: pointer; font-size: 13px; border: none; background: transparent; color: #aaa; transition: all .15s; }
-.nav-tab:hover { background: rgba(255,255,255,.1); color: #fff; }
-.nav-tab.active { background: #f0f2f5; color: #1a1a2e; font-weight: 600; }
-.main { flex: 1; overflow: hidden; display: flex; }
-.panel { flex: 1; overflow-y: auto; padding: 20px; }
+/* ── Layout ──────────────────────────────────────────── */
+.app{display:flex;flex-direction:column;height:100vh;overflow:hidden}
+.topbar{background:#1a1a2e;color:#e0e0e0;padding:0 16px;display:flex;align-items:center;gap:12px;height:52px;flex-shrink:0}
+.topbar h1{font-size:17px;font-weight:700;color:#fff;white-space:nowrap}
+.nav-tabs{display:flex;gap:2px}
+.nav-tab{padding:8px 18px;border-radius:5px 5px 0 0;cursor:pointer;font-size:14px;border:none;background:transparent;color:#aaa;transition:all .15s;font-weight:500}
+.nav-tab:hover{background:rgba(255,255,255,.12);color:#fff}
+.nav-tab.active{background:#eef0f4;color:#1a1a2e;font-weight:700}
+.main{flex:1;overflow:hidden;display:flex}
+.panel{flex:1;overflow-y:auto;padding:22px}
 
-/* Cards */
-.card { background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.08); padding: 16px; margin-bottom: 16px; }
-.card-title { font-size: 13px; font-weight: 700; color: #555; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 12px; }
+/* ── Cards / Forms (non-editor tabs) ─────────────────── */
+.card{background:#fff;border-radius:10px;box-shadow:0 1px 5px rgba(0,0,0,.09);padding:18px;margin-bottom:18px}
+.card-title{font-size:12px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.6px;margin-bottom:14px}
+.form-row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px}
+.field{display:flex;flex-direction:column;gap:5px}
+.field label{font-size:13px;color:#555;font-weight:500}
+input[type=text],input[type=number],input[type=file],select,textarea{border:1px solid #d0d0d0;border-radius:5px;padding:8px 11px;font-size:14px;outline:none;transition:border-color .15s;font-family:inherit}
+input:focus,select:focus,textarea:focus{border-color:#4a6cf7}
+.btn{padding:9px 18px;border-radius:6px;border:none;cursor:pointer;font-size:14px;font-weight:600;transition:all .15s;min-height:40px}
+.btn-primary{background:#4a6cf7;color:#fff}.btn-primary:hover{background:#3a5ce0}
+.btn-success{background:#2e7d32;color:#fff}.btn-success:hover{background:#1b5e20}
+.btn-danger{background:#c62828;color:#fff}.btn-danger:hover{background:#8e0000}
+.btn-outline{background:#fff;border:1px solid #ccc;color:#444}.btn-outline:hover{border-color:#4a6cf7;color:#4a6cf7}
+.btn-sm{padding:5px 12px;font-size:13px;min-height:32px}
+.btn:disabled{opacity:.45;cursor:default}
+.alert{padding:11px 15px;border-radius:6px;font-size:14px;margin-bottom:13px}
+.alert-info{background:#e3f2fd;color:#1565c0;border:1px solid #bbdefb}
+.alert-success{background:#e8f5e9;color:#2e7d32;border:1px solid #c8e6c9}
+.alert-error{background:#fce8e8;color:#c62828;border:1px solid #f5c6c6}
+.badge{display:inline-block;padding:3px 9px;border-radius:10px;font-size:12px;font-weight:600}
+.badge-blue{background:#e3eafd;color:#2d4fcc}
+.spinner{display:inline-block;width:16px;height:16px;border:2px solid #ccc;border-top-color:#4a6cf7;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:5px}
+@keyframes spin{to{transform:rotate(360deg)}}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{background:#f7f8fa;font-weight:600;text-align:left;padding:9px 11px;border-bottom:2px solid #e0e0e0;white-space:nowrap}
+td{padding:8px 11px;border-bottom:1px solid #f0f0f0}
+tr:hover td{background:#f7f8fb}
+.pagination{display:flex;gap:6px;align-items:center;padding:10px 0}
+.page-btn{padding:5px 12px;border:1px solid #ddd;border-radius:4px;background:#fff;cursor:pointer;font-size:13px}
+.page-btn.active{background:#4a6cf7;color:#fff;border-color:#4a6cf7}
 
-/* Forms */
-.form-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 10px; }
-.field { display: flex; flex-direction: column; gap: 4px; }
-.field label { font-size: 12px; color: #666; }
-input[type=text], input[type=number], input[type=file], select, textarea {
-  border: 1px solid #ddd; border-radius: 4px; padding: 6px 10px; font-size: 13px; outline: none;
-  transition: border-color .15s;
-}
-input:focus, select:focus, textarea:focus { border-color: #4a6cf7; }
-input[type=file] { padding: 4px; }
+/* ── Step indicator ───────────────────────────────────── */
+.step-indicator{display:flex;margin-bottom:18px}
+.step{flex:1;text-align:center;padding:7px;font-size:13px;border-bottom:3px solid #e0e0e0;color:#aaa}
+.step.done{border-color:#2e7d32;color:#2e7d32}
+.step.active{border-color:#4a6cf7;color:#4a6cf7;font-weight:700}
 
-/* Buttons */
-.btn { padding: 7px 16px; border-radius: 5px; border: none; cursor: pointer; font-size: 13px; font-weight: 500; transition: all .15s; }
-.btn-primary { background: #4a6cf7; color: #fff; }
-.btn-primary:hover { background: #3a5ce0; }
-.btn-success { background: #2e7d32; color: #fff; }
-.btn-success:hover { background: #1b5e20; }
-.btn-danger { background: #c62828; color: #fff; }
-.btn-danger:hover { background: #8e0000; }
-.btn-outline { background: transparent; border: 1px solid #ccc; color: #444; }
-.btn-outline:hover { border-color: #4a6cf7; color: #4a6cf7; }
-.btn-sm { padding: 4px 10px; font-size: 12px; }
-.btn:disabled { opacity: .5; cursor: default; }
+/* ── Modal ────────────────────────────────────────────── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200;display:flex;align-items:center;justify-content:center}
+.modal{background:#fff;border-radius:10px;padding:22px;width:420px;max-width:95vw;box-shadow:0 8px 32px rgba(0,0,0,.22)}
+.modal-title{font-weight:700;margin-bottom:16px;font-size:17px}
 
-/* Table */
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th { background: #f7f8fa; font-weight: 600; text-align: left; padding: 8px 10px; border-bottom: 2px solid #e0e0e0; white-space: nowrap; }
-td { padding: 7px 10px; border-bottom: 1px solid #f0f0f0; }
-tr:hover td { background: #f7f8fb; }
-.badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
-.badge-blue { background: #e3eafd; color: #2d4fcc; }
-.badge-green { background: #e8f5e9; color: #2e7d32; }
-.badge-red { background: #fce8e8; color: #c62828; }
+/* ── Editor shell ─────────────────────────────────────── */
+.ed-shell{display:flex;flex:1;overflow:hidden;height:100%}
+.ed-left{width:230px;background:#fff;border-right:1px solid #ddd;overflow-y:auto;padding:12px;flex-shrink:0;display:flex;flex-direction:column;gap:0}
+.ed-center{flex:1;background:#d8dce6;overflow:auto;display:flex;flex-direction:column}
+.ed-right{width:250px;background:#fff;border-left:1px solid #ddd;overflow-y:auto;display:flex;flex-direction:column;flex-shrink:0}
 
-/* Alert */
-.alert { padding: 10px 14px; border-radius: 5px; font-size: 13px; margin-bottom: 12px; }
-.alert-info { background: #e3f2fd; color: #1565c0; border: 1px solid #bbdefb; }
-.alert-success { background: #e8f5e9; color: #2e7d32; border: 1px solid #c8e6c9; }
-.alert-error { background: #fce8e8; color: #c62828; border: 1px solid #f5c6c6; }
+/* Left sidebar sections */
+.sec{margin-bottom:12px}
+.sec-title{font-size:11px;font-weight:700;color:#777;text-transform:uppercase;letter-spacing:.6px;padding:6px 0 5px;border-bottom:1px solid #eee;margin-bottom:8px}
+.sec select,.sec input[type=text],.sec input[type=number]{font-size:13px;padding:6px 8px;width:100%}
+.sec-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;gap:6px}
+.sec-row label{font-size:13px;color:#555;white-space:nowrap}
 
-/* Spinner */
-.spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #ccc; border-top-color: #4a6cf7; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; margin-right: 6px; }
-@keyframes spin { to { transform: rotate(360deg); } }
+/* Palette buttons */
+.pal-btn{width:100%;padding:9px 10px;border:2px solid #e0e0e0;border-radius:7px;background:#fafafa;cursor:pointer;display:flex;align-items:center;gap:9px;font-size:13px;font-weight:500;margin-bottom:6px;transition:all .12s;text-align:left}
+.pal-btn:hover{border-color:#4a6cf7;background:#f0f4ff;color:#4a6cf7}
+.pal-ico{font-size:18px;width:24px;text-align:center;flex-shrink:0}
 
-/* ── Editor ─────────────────────────────────── */
-.editor-shell { display: flex; height: 100%; gap: 0; overflow: hidden; }
-.editor-sidebar { width: 220px; background: #fff; border-right: 1px solid #e0e0e0; display: flex; flex-direction: column; flex-shrink: 0; overflow-y: auto; padding: 12px; }
-.editor-canvas-area { flex: 1; overflow: auto; background: #e8eaf0; padding: 20px; display: flex; justify-content: center; }
-.editor-props { width: 240px; background: #fff; border-left: 1px solid #e0e0e0; overflow-y: auto; padding: 12px; flex-shrink: 0; }
-.sidebar-title { font-size: 11px; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: .5px; margin: 8px 0 6px; }
+/* Field checkboxes */
+.fld-chk{display:flex;align-items:center;gap:6px;padding:5px 8px;border:1px solid #ddd;border-radius:5px;cursor:pointer;font-size:13px;margin-bottom:4px;background:#fafafa}
+.fld-chk:hover{border-color:#4a6cf7;background:#f0f4ff}
+.fld-chk input{width:16px;height:16px;cursor:pointer;accent-color:#4a6cf7}
 
-/* Widget palette */
-.widget-palette .palette-item {
-  display: flex; align-items: center; gap: 8px; padding: 7px 10px;
-  border: 1px solid #e0e0e0; border-radius: 5px; margin-bottom: 6px;
-  cursor: grab; background: #fafafa; font-size: 12px; user-select: none;
-  transition: box-shadow .15s;
-}
-.widget-palette .palette-item:hover { box-shadow: 0 2px 8px rgba(0,0,0,.12); background: #f0f4ff; }
-.palette-icon { font-size: 16px; width: 20px; text-align: center; }
+/* Canvas toolbar */
+.canvas-toolbar{background:#f5f6f8;border-bottom:1px solid #d0d0d0;padding:7px 14px;display:flex;align-items:center;gap:10px;flex-shrink:0;flex-wrap:wrap}
+.canvas-hint{font-size:12px;color:#888;flex:1;min-width:0}
 
-/* Paper canvas */
-.paper {
-  background: #fff;
-  box-shadow: 0 4px 24px rgba(0,0,0,.18);
-  position: relative;
-  /* A4 landscape: 297mm × 210mm — displayed at ~72% scale */
-  width: 850px; min-height: 600px;
-  padding: 28px 32px;
-}
-.paper.portrait { width: 600px; min-height: 850px; }
+/* Paper */
+.canvas-scroll{flex:1;overflow:auto;padding:24px;display:flex;justify-content:flex-start;align-items:flex-start}
+.paper{position:relative;background:#fff;box-shadow:0 4px 28px rgba(0,0,0,.22);flex-shrink:0;overflow:hidden}
+.paper.landscape{width:877px;height:620px}
+.paper.portrait{width:620px;height:877px}
+.margin-guide{position:absolute;inset:28px;border:1px dashed rgba(70,130,220,.25);pointer-events:none;z-index:0}
 
-/* Canvas drop zone */
-.canvas-widgets { min-height: 300px; }
-.canvas-empty { text-align: center; padding: 40px; color: #bbb; font-size: 13px; border: 2px dashed #ddd; border-radius: 6px; }
+/* Canvas widgets */
+.cw{position:absolute;touch-action:none;cursor:grab;border-radius:4px;overflow:visible}
+.cw:active{cursor:grabbing}
+.cw-inner{position:absolute;inset:0;border-radius:4px;overflow:hidden;pointer-events:none}
+.cw-body{width:100%;height:100%;overflow:hidden;padding:6px;line-height:1.5}
+.wm-tategaki{writing-mode:vertical-rl;text-orientation:mixed}
+.wm-yokogumi{writing-mode:horizontal-tb}
+.cw-border{position:absolute;inset:0;border:2px solid rgba(150,150,180,.35);border-radius:4px;pointer-events:none;transition:border-color .12s}
+.cw.selected .cw-border{border-color:#4a6cf7;box-shadow:0 0 0 3px rgba(74,108,247,.18)}
+/* Type color bands */
+.cw-band{position:absolute;pointer-events:none;border-radius:3px 0 0 3px}
+.wm-tategaki~.cw-band{top:0;right:0;width:4px;height:100%;border-radius:0 3px 3px 0}
+.wm-yokogumi~.cw-band{top:0;left:0;width:100%;height:4px;border-radius:3px 3px 0 0}
+.band-title{background:#4a6cf7}
+.band-header{background:#2e7d32}
+.band-entry{background:#f57c00}
+.band-spacer{background:#9e9e9e}
+.band-break{background:#c62828}
 
-/* Canvas widget items */
-.canvas-widget {
-  position: relative; margin-bottom: 6px;
-  border: 2px solid transparent; border-radius: 4px;
-  cursor: pointer; transition: border-color .15s;
-  padding: 6px 8px;
-}
-.canvas-widget:hover { border-color: #c0c8f0; }
-.canvas-widget.selected { border-color: #4a6cf7; background: #f0f4ff; }
-.canvas-widget .widget-handle {
-  position: absolute; left: -24px; top: 50%; transform: translateY(-50%);
-  cursor: grab; color: #bbb; font-size: 16px; padding: 4px;
-}
-.canvas-widget .widget-remove {
-  position: absolute; right: 4px; top: 4px;
-  background: #fce8e8; border: none; border-radius: 3px;
-  width: 18px; height: 18px; font-size: 11px; cursor: pointer; color: #c62828;
-  display: none; align-items: center; justify-content: center;
-}
-.canvas-widget:hover .widget-remove { display: flex; }
+/* Dir badge on widget */
+.cw-dirbadge{position:absolute;bottom:3px;right:4px;font-size:10px;color:rgba(0,0,0,.3);pointer-events:none;font-weight:700;z-index:2}
 
-/* Widget previews */
-.preview-title { text-align: center; font-weight: bold; padding: 4px; }
-.preview-header { font-weight: bold; padding: 4px 8px; border-left: 3px solid #4a6cf7; }
-.preview-entry { padding: 4px 8px; color: #444; font-family: 'MS Mincho', serif; font-size: 12px; }
-.preview-spacer { border-top: 1px dashed #ccc; margin: 4px 0; color: #ccc; font-size: 11px; text-align: center; }
-.preview-pagebreak { border-top: 2px solid #f06; color: #f06; font-size: 11px; text-align: center; padding: 2px; }
+/* Handles (only visible when selected) */
+.rot-hdl{position:absolute;top:-18px;left:50%;transform:translateX(-50%);width:32px;height:32px;border-radius:50%;background:#4a6cf7;color:#fff;cursor:grab;display:flex;align-items:center;justify-content:center;font-size:17px;box-shadow:0 2px 6px rgba(74,108,247,.5);z-index:10;user-select:none;touch-action:none}
+.rot-hdl:active{cursor:grabbing;background:#2a4ce0}
+.rsz-hdl{position:absolute;bottom:-2px;right:-2px;width:22px;height:22px;cursor:se-resize;color:#4a6cf7;font-size:16px;display:flex;align-items:center;justify-content:center;z-index:10;user-select:none;touch-action:none;background:#fff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,.2)}
 
-/* Properties panel */
-.prop-group { margin-bottom: 14px; }
-.prop-label { font-size: 11px; font-weight: 600; color: #666; margin-bottom: 4px; display: block; }
-.prop-input { width: 100%; }
-.prop-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
-.prop-row label { font-size: 12px; color: #555; flex: 1; }
-.field-chip {
-  display: inline-flex; align-items: center; gap: 4px;
-  background: #e8edf8; border-radius: 3px; padding: 3px 7px; font-size: 12px; margin: 2px;
-}
-.field-chip button { background: none; border: none; cursor: pointer; color: #888; font-size: 11px; }
+/* ── Right properties panel ───────────────────────────── */
+.prop-head{padding:12px 14px;border-bottom:1px solid #eee;font-weight:700;font-size:15px;background:#fafafa}
+.prop-body{flex:1;overflow-y:auto;padding:12px 14px}
+.prop-sect{margin-bottom:16px}
+.prop-lbl{font-size:12px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.4px;margin-bottom:7px;display:block}
+/* Direction toggle */
+.dir-toggle{display:flex;gap:5px}
+.dir-btn{flex:1;padding:10px 6px;border:2px solid #ddd;border-radius:7px;background:#fafafa;cursor:pointer;font-size:14px;font-weight:600;transition:all .12s;text-align:center}
+.dir-btn:hover{border-color:#4a6cf7}
+.dir-btn.active{background:#4a6cf7;color:#fff;border-color:#4a6cf7}
+/* Alignment */
+.align-grp{display:flex;gap:4px}
+.align-btn{flex:1;padding:8px 4px;border:1px solid #ddd;border-radius:5px;background:#fafafa;cursor:pointer;font-size:14px;transition:all .12s}
+.align-btn.active{background:#4a6cf7;color:#fff;border-color:#4a6cf7}
+/* Size control */
+.size-ctrl{display:flex;gap:4px;align-items:center}
+.size-ctrl button{width:36px;height:36px;border:1px solid #ddd;border-radius:5px;background:#fafafa;cursor:pointer;font-size:18px;font-weight:700;line-height:1}
+.size-ctrl button:hover{background:#e3eafd;border-color:#4a6cf7}
+.size-ctrl input{flex:1;text-align:center;font-size:15px;font-weight:600}
+/* Bold toggle */
+.bold-btn{width:100%;padding:9px;border:2px solid #ddd;border-radius:6px;background:#fafafa;cursor:pointer;font-size:15px;transition:all .12s}
+.bold-btn.active{background:#222;color:#fff;border-color:#222}
 
-/* Page settings */
-.page-settings-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 8px 12px; background: #fff; border-bottom: 1px solid #e0e0e0; }
-.page-settings-bar label { font-size: 12px; color: #666; }
+/* Generate section */
+.gen-section{padding:14px;border-top:2px solid #eee;background:#fafafa;flex-shrink:0}
+.gen-title{font-size:12px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px}
+.gen-btn{width:100%;padding:13px 10px;border-radius:8px;border:none;cursor:pointer;font-size:15px;font-weight:700;margin-bottom:8px;display:flex;align-items:center;justify-content:center;gap:8px;transition:all .15s}
+.gen-btn:disabled{opacity:.4;cursor:default}
+.gen-print{background:#455a64;color:#fff}.gen-print:not(:disabled):hover{background:#37474f}
+.gen-word{background:#1565c0;color:#fff}.gen-word:not(:disabled):hover{background:#0d47a1}
+.gen-pdf{background:#b71c1c;color:#fff}.gen-pdf:not(:disabled):hover{background:#7f0000}
 
-/* Results summary */
-.results-bar { background: #fff; border-bottom: 1px solid #e0e0e0; padding: 10px 20px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
-.results-bar .stat { font-size: 13px; }
-.results-bar .stat strong { color: #4a6cf7; }
-
-/* Pagination */
-.pagination { display: flex; gap: 6px; align-items: center; padding: 10px 0; }
-.page-btn { padding: 4px 10px; border: 1px solid #ddd; border-radius: 4px; background: #fff; cursor: pointer; font-size: 12px; }
-.page-btn.active { background: #4a6cf7; color: #fff; border-color: #4a6cf7; }
-.page-btn:hover:not(.active) { border-color: #4a6cf7; }
-
-/* Field selector in fields tab */
-.field-checkboxes { display: flex; flex-wrap: wrap; gap: 8px; }
-.field-check { display: flex; align-items: center; gap: 4px; padding: 4px 10px; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 12px; }
-.field-check input { cursor: pointer; }
-.field-check:hover { border-color: #4a6cf7; background: #f0f4ff; }
-
-/* Import wizard steps */
-.step-indicator { display: flex; gap: 0; margin-bottom: 16px; }
-.step { flex: 1; text-align: center; padding: 6px; font-size: 12px; border-bottom: 3px solid #e0e0e0; color: #aaa; }
-.step.done { border-color: #2e7d32; color: #2e7d32; }
-.step.active { border-color: #4a6cf7; color: #4a6cf7; font-weight: 700; }
-
-/* Column mapping table */
-.mapping-table td select { width: 100%; }
-
-/* Modal overlay for add-person */
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 100; display: flex; align-items: center; justify-content: center; }
-.modal { background: #fff; border-radius: 8px; padding: 20px; width: 400px; max-width: 95vw; box-shadow: 0 8px 32px rgba(0,0,0,.2); }
-.modal-title { font-weight: 700; margin-bottom: 14px; font-size: 15px; }
-
-/* Scrollbar */
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: #f0f2f5; }
-::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+/* Results bar */
+.results-bar{background:#fff;border-bottom:1px solid #e0e0e0;padding:10px 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.field-check{display:flex;align-items:center;gap:4px;padding:4px 10px;border:1px solid #ddd;border-radius:4px;cursor:pointer;font-size:13px}
+.field-check:hover{border-color:#4a6cf7;background:#f0f4ff}
 </style>
 </head>
 <body>
 
-<div class="app" x-data="app()" x-init="init()">
+<div class="app" x-data="app()" x-init="init()"
+     @pointermove.window="ptrMove($event)"
+     @pointerup.window="ptrUp()">
 
-  <!-- Top bar -->
+  <!-- ── Topbar ──────────────────────────────────────── -->
   <div class="topbar">
     <h1>🏮 年忌法要 管理</h1>
     <div class="nav-tabs">
-      <template x-for="tab in tabs" :key="tab.id">
-        <button class="nav-tab" :class="{active: activeTab === tab.id}"
-                @click="activeTab = tab.id" x-text="tab.label"></button>
+      <template x-for="t in tabs" :key="t.id">
+        <button class="nav-tab" :class="{active:tab===t.id}" @click="tab=t.id" x-text="t.label"></button>
       </template>
     </div>
     <div style="flex:1"></div>
-    <span style="font-size:12px; color:#666;" x-text="'DB: ' + stats.total + '件'"></span>
+    <span style="font-size:13px;color:#888" x-text="'登録: '+stats.total+'件'"></span>
   </div>
 
-  <!-- Main -->
   <div class="main">
 
-    <!-- ═══ TAB: Import ═══════════════════════════════════════════════ -->
-    <div class="panel" x-show="activeTab === 'import'">
-      <div class="card">
-        <div class="card-title">Excel / CSV インポート</div>
-        <div class="step-indicator">
-          <div class="step" :class="{active: importStep===1, done: importStep>1}">① ファイル選択</div>
-          <div class="step" :class="{active: importStep===2, done: importStep>2}">② 列マッピング</div>
-          <div class="step" :class="{active: importStep===3}">③ 完了</div>
-        </div>
-
-        <!-- Step 1: File Upload -->
-        <div x-show="importStep === 1">
-          <div class="form-row">
-            <div class="field">
-              <label>ファイル選択 (.xlsx / .csv)</label>
-              <input type="file" accept=".xlsx,.xls,.csv" @change="importFileSelected($event)" :disabled="importing">
-            </div>
-            <button class="btn btn-primary" @click="doImportPreview()" :disabled="!importFile || importing">
-              <span x-show="importing"><span class="spinner"></span></span>
-              プレビュー →
-            </button>
-          </div>
-          <div class="alert alert-info" x-show="!importFile">ファイルを選択してください</div>
-        </div>
-
-        <!-- Step 2: Column Mapping -->
-        <div x-show="importStep === 2">
-          <div class="form-row" x-show="Object.keys(importSheets).length > 1">
-            <div class="field">
-              <label>シート選択</label>
-              <select x-model="importSelectedSheet" @change="importSheetChanged()">
-                <template x-for="s in Object.keys(importSheets)" :key="s">
-                  <option :value="s" x-text="s"></option>
-                </template>
-              </select>
-            </div>
-          </div>
-
-          <div class="alert alert-info" style="margin-bottom:10px;">列のマッピングを確認・修正してください</div>
-
-          <table style="margin-bottom:12px;">
-            <thead><tr>
-              <th>DB フィールド</th>
-              <th>Excel 列</th>
-            </tr></thead>
-            <tbody>
-              <tr>
-                <td>氏名 (name) *</td>
-                <td><select x-model="importMapping.name_col">
-                  <option value="">-- なし --</option>
-                  <template x-for="col in currentSheetCols" :key="col">
-                    <option :value="col" x-text="col"></option>
-                  </template>
-                </select></td>
-              </tr>
-              <tr>
-                <td>命日 (death_date) *</td>
-                <td><select x-model="importMapping.death_date_col">
-                  <option value="">-- 分割入力 --</option>
-                  <template x-for="col in currentSheetCols" :key="col">
-                    <option :value="col" x-text="col"></option>
-                  </template>
-                </select></td>
-              </tr>
-              <template x-if="!importMapping.death_date_col">
-                <tr>
-                  <td colspan="2" style="padding-left:20px; font-size:12px; color:#888;">
-                    → 元号: <select x-model="importMapping.era_col" style="width:100px">
-                      <option value="">--</option>
-                      <template x-for="col in currentSheetCols" :key="col">
-                        <option :value="col" x-text="col"></option>
-                      </template>
-                    </select>
-                    年: <select x-model="importMapping.year_col" style="width:100px">
-                      <option value="">--</option>
-                      <template x-for="col in currentSheetCols" :key="col">
-                        <option :value="col" x-text="col"></option>
-                      </template>
-                    </select>
-                    月: <select x-model="importMapping.month_col" style="width:100px">
-                      <option value="">--</option>
-                      <template x-for="col in currentSheetCols" :key="col">
-                        <option :value="col" x-text="col"></option>
-                      </template>
-                    </select>
-                    日: <select x-model="importMapping.day_col" style="width:100px">
-                      <option value="">--</option>
-                      <template x-for="col in currentSheetCols" :key="col">
-                        <option :value="col" x-text="col"></option>
-                      </template>
-                    </select>
-                  </td>
-                </tr>
-              </template>
-            </tbody>
-          </table>
-
-          <!-- Preview rows -->
-          <div style="overflow-x:auto; margin-bottom:12px;" x-show="importPreviewRows.length > 0">
-            <div class="card-title">プレビュー (先頭5行)</div>
-            <table>
-              <thead><tr>
-                <template x-for="col in currentSheetCols" :key="col">
-                  <th x-text="col"></th>
-                </template>
-              </tr></thead>
-              <tbody>
-                <template x-for="row in importPreviewRows" :key="JSON.stringify(row)">
-                  <tr>
-                    <template x-for="col in currentSheetCols" :key="col">
-                      <td x-text="row[col] || ''"></td>
-                    </template>
-                  </tr>
-                </template>
-              </tbody>
-            </table>
-          </div>
-
-          <div class="form-row">
-            <button class="btn btn-outline" @click="importStep=1">← 戻る</button>
-            <button class="btn btn-success" @click="doImportConfirm()" :disabled="importing">
-              <span x-show="importing"><span class="spinner"></span></span>
-              インポート実行
-            </button>
-          </div>
-        </div>
-
-        <!-- Step 3: Done -->
-        <div x-show="importStep === 3">
-          <div class="alert alert-success" x-show="importResult.created > 0">
-            ✅ <strong x-text="importResult.created"></strong> 件インポート完了。
-            スキップ: <span x-text="importResult.skipped"></span> 件
-          </div>
-          <div class="alert alert-error" x-show="importResult.errors && importResult.errors.length > 0">
-            ⚠️ エラー: <span x-text="importResult.errors.length"></span> 件
-            <ul style="margin-top:6px;">
-              <template x-for="e in importResult.errors.slice(0,10)" :key="JSON.stringify(e)">
-                <li x-text="(e.name || '?') + ': ' + (e.errors||[]).join(', ')"></li>
-              </template>
-            </ul>
-          </div>
-          <button class="btn btn-primary" @click="importStep=1; importFile=null; loadStats()">新しいファイルをインポート</button>
-          <button class="btn btn-outline" style="margin-left:8px" @click="activeTab='people'; loadPeople()">人物一覧を見る</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- ═══ TAB: People ═══════════════════════════════════════════════ -->
-    <div class="panel" x-show="activeTab === 'people'">
-      <div class="card">
-        <div class="form-row" style="justify-content: space-between; align-items: center;">
-          <div class="card-title" style="margin:0">人物データベース (<span x-text="stats.total"></span>件)</div>
-          <div class="form-row" style="margin:0">
-            <input type="text" placeholder="氏名で検索…" x-model="peopleSearch" @input.debounce.400ms="loadPeople()" style="width:200px">
-            <button class="btn btn-primary btn-sm" @click="openAddPerson()">＋ 追加</button>
-          </div>
-        </div>
+  <!-- ══════════════════════════════════════════════════
+       TAB ① インポート
+  ══════════════════════════════════════════════════ -->
+  <div class="panel" x-show="tab==='import'">
+    <div class="card">
+      <div class="card-title">Excel / CSV インポート</div>
+      <div class="step-indicator">
+        <div class="step" :class="{active:importStep===1,done:importStep>1}">① ファイル選択</div>
+        <div class="step" :class="{active:importStep===2,done:importStep>2}">② 列マッピング</div>
+        <div class="step" :class="{active:importStep===3}">③ 完了</div>
       </div>
 
-      <div class="card" style="padding:0; overflow:hidden;">
-        <div x-show="peopleLoading" style="padding:20px; text-align:center;"><span class="spinner"></span> 読み込み中…</div>
-        <div x-show="!peopleLoading">
-          <div x-show="people.length === 0" class="alert alert-info" style="margin:16px">データがありません。インポートするか手動で追加してください。</div>
-          <table x-show="people.length > 0">
-            <thead><tr>
-              <th><input type="checkbox" @change="toggleAllPeople($event)"></th>
-              <th>氏名</th>
-              <th>命日</th>
-              <th>属性</th>
-              <th>操作</th>
-            </tr></thead>
-            <tbody>
-              <template x-for="p in people" :key="p.id">
-                <tr>
-                  <td><input type="checkbox" :value="p.id" x-model="selectedPeople"></td>
-                  <td x-text="p.name"></td>
-                  <td x-text="p.death_date"></td>
-                  <td>
-                    <template x-for="[k,v] in personAttrs(p)" :key="k">
-                      <span class="badge badge-blue" style="margin:1px" x-text="k + ': ' + v"></span>
-                    </template>
-                  </td>
-                  <td>
-                    <button class="btn btn-outline btn-sm" @click="openEditPerson(p)">編集</button>
-                    <button class="btn btn-danger btn-sm" @click="deletePerson(p.id)">削除</button>
-                  </td>
-                </tr>
-              </template>
-            </tbody>
-          </table>
-          <div class="pagination" style="padding:10px 16px;" x-show="peopleTotalPages > 1">
-            <button class="page-btn" @click="peoplePage=1; loadPeople()" :disabled="peoplePage===1">«</button>
-            <button class="page-btn" @click="peoplePage--; loadPeople()" :disabled="peoplePage===1">‹</button>
-            <span style="font-size:12px; color:#666">ページ <strong x-text="peoplePage"></strong> / <span x-text="peopleTotalPages"></span></span>
-            <button class="page-btn" @click="peoplePage++; loadPeople()" :disabled="peoplePage>=peopleTotalPages">›</button>
-            <button class="page-btn" @click="peoplePage=peopleTotalPages; loadPeople()" :disabled="peoplePage>=peopleTotalPages">»</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Bulk actions bar -->
-      <div class="card" x-show="selectedPeople.length > 0" style="padding:10px 16px; display:flex; gap:10px; align-items:center;">
-        <span style="font-size:13px;"><strong x-text="selectedPeople.length"></strong> 件選択中</span>
-        <button class="btn btn-primary btn-sm" @click="goCalculateSelected()">→ 年忌計算</button>
-        <button class="btn btn-outline btn-sm" @click="selectedPeople=[]">選択解除</button>
-      </div>
-    </div>
-
-    <!-- ═══ TAB: Calculate ═══════════════════════════════════════════ -->
-    <div class="panel" x-show="activeTab === 'calculate'">
-      <div class="card">
-        <div class="card-title">年忌計算</div>
-        <div class="form-row" style="align-items: flex-end; gap: 16px; flex-wrap: wrap;">
+      <!-- Step 1 -->
+      <div x-show="importStep===1">
+        <div class="form-row">
           <div class="field">
-            <label>対象年</label>
-            <input type="number" x-model.number="calcYear" min="1900" max="2200" style="width:100px">
+            <label>ファイル (.xlsx / .xls / .csv)</label>
+            <input type="file" accept=".xlsx,.xls,.csv" @change="importFile=$event.target.files[0]" :disabled="importing">
           </div>
-          <div class="field">
-            <label>対象者</label>
-            <div style="font-size:13px; color:#444;">
-              <label style="margin-right:12px;">
-                <input type="radio" name="calcScope" value="all" x-model="calcScope"> 全員
-              </label>
-              <label>
-                <input type="radio" name="calcScope" value="selected" x-model="calcScope"> 選択中 (<span x-text="selectedPeople.length"></span>件)
-              </label>
-            </div>
-          </div>
-          <button class="btn btn-primary" @click="doCalculate()" :disabled="calculating || (calcScope==='selected' && selectedPeople.length===0)">
-            <span x-show="calculating"><span class="spinner"></span></span>
-            計算実行
+          <button class="btn btn-primary" @click="doImportPreview()" :disabled="!importFile||importing">
+            <span x-show="importing"><span class="spinner"></span></span>プレビュー →
           </button>
         </div>
-        <div class="alert alert-error" x-show="calcError" x-text="calcError"></div>
+        <div class="alert alert-info" x-show="!importFile">ファイルを選択してください</div>
       </div>
 
-      <!-- Results summary -->
-      <div x-show="calcResults">
-        <div class="results-bar">
-          <span class="stat"><strong x-text="calcResults && calcResults.total_entries || 0"></strong> 件ヒット</span>
-          <span class="stat"><strong x-text="calcResults && calcResults.groups && calcResults.groups.length || 0"></strong> 年忌グループ</span>
-          <span style="flex:1"></span>
-          <button class="btn btn-success" @click="goEditor()">📄 文書エディタで開く →</button>
+      <!-- Step 2 -->
+      <div x-show="importStep===2">
+        <div class="form-row" x-show="Object.keys(importSheets).length>1">
+          <div class="field"><label>シート</label>
+            <select x-model="importSelectedSheet" @change="importSheetChanged()">
+              <template x-for="s in Object.keys(importSheets)" :key="s"><option :value="s" x-text="s"></option></template>
+            </select>
+          </div>
         </div>
+        <div class="alert alert-info" style="margin-bottom:10px">列マッピングを確認・修正してください</div>
+        <table style="margin-bottom:12px">
+          <thead><tr><th>DBフィールド</th><th>Excel列</th></tr></thead>
+          <tbody>
+            <tr><td>氏名 *</td><td><select x-model="importMapping.name_col"><option value="">--</option><template x-for="c in currentSheetCols" :key="c"><option :value="c" x-text="c"></option></template></select></td></tr>
+            <tr><td>命日 *</td><td><select x-model="importMapping.death_date_col"><option value="">-- 分割 --</option><template x-for="c in currentSheetCols" :key="c"><option :value="c" x-text="c"></option></template></select></td></tr>
+            <template x-if="!importMapping.death_date_col">
+              <tr><td colspan="2" style="padding-left:16px;font-size:13px;color:#888">
+                元号 <select x-model="importMapping.era_col" style="width:90px"><option value="">--</option><template x-for="c in currentSheetCols" :key="c"><option :value="c" x-text="c"></option></template></select>
+                年 <select x-model="importMapping.year_col" style="width:90px"><option value="">--</option><template x-for="c in currentSheetCols" :key="c"><option :value="c" x-text="c"></option></template></select>
+                月 <select x-model="importMapping.month_col" style="width:90px"><option value="">--</option><template x-for="c in currentSheetCols" :key="c"><option :value="c" x-text="c"></option></template></select>
+                日 <select x-model="importMapping.day_col" style="width:90px"><option value="">--</option><template x-for="c in currentSheetCols" :key="c"><option :value="c" x-text="c"></option></template></select>
+              </td></tr>
+            </template>
+          </tbody>
+        </table>
+        <div style="overflow-x:auto;margin-bottom:12px" x-show="importPreviewRows.length">
+          <div class="card-title">先頭5行プレビュー</div>
+          <table><thead><tr><template x-for="c in currentSheetCols" :key="c"><th x-text="c"></th></template></tr></thead>
+          <tbody><template x-for="row in importPreviewRows" :key="JSON.stringify(row)"><tr><template x-for="c in currentSheetCols" :key="c"><td x-text="row[c]||''"></td></template></tr></template></tbody></table>
+        </div>
+        <div class="form-row">
+          <button class="btn btn-outline" @click="importStep=1">← 戻る</button>
+          <button class="btn btn-success" @click="doImportConfirm()" :disabled="importing"><span x-show="importing"><span class="spinner"></span></span>インポート実行</button>
+        </div>
+      </div>
 
-        <div class="card" style="padding:0; overflow:hidden;" x-show="calcResults && calcResults.groups">
-          <table>
-            <thead><tr><th>年忌名</th><th>件数</th><th>代表例</th></tr></thead>
-            <tbody>
-              <template x-for="g in (calcResults && calcResults.groups || [])" :key="g.key">
-                <tr>
-                  <td><span class="badge badge-blue" x-text="g.nenki_name"></span></td>
-                  <td x-text="g.entries.length + '件'"></td>
-                  <td x-text="g.entries[0] && g.entries[0].name || ''"></td>
-                </tr>
-              </template>
-            </tbody>
-          </table>
+      <!-- Step 3 -->
+      <div x-show="importStep===3">
+        <div class="alert alert-success" x-show="importResult.created>0">✅ <strong x-text="importResult.created"></strong>件インポート完了。スキップ: <span x-text="importResult.skipped"></span>件</div>
+        <div class="alert alert-error" x-show="importResult.errors&&importResult.errors.length"><ul><template x-for="e in (importResult.errors||[]).slice(0,10)" :key="JSON.stringify(e)"><li x-text="(e.name||'?')+': '+(e.errors||[]).join(', ')"></li></template></ul></div>
+        <button class="btn btn-primary" @click="importStep=1;importFile=null;loadStats()">新しいファイルをインポート</button>
+        <button class="btn btn-outline" style="margin-left:8px" @click="tab='people';loadPeople()">人物一覧を見る</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════
+       TAB ② 人物一覧
+  ══════════════════════════════════════════════════ -->
+  <div class="panel" x-show="tab==='people'">
+    <div class="card">
+      <div class="form-row" style="justify-content:space-between;align-items:center">
+        <div class="card-title" style="margin:0">人物データベース（<span x-text="stats.total"></span>件）</div>
+        <div class="form-row" style="margin:0">
+          <input type="text" placeholder="氏名で検索…" x-model="peopleSearch" @input.debounce.400ms="loadPeople()" style="width:200px">
+          <button class="btn btn-primary btn-sm" @click="openAddPerson()">＋ 追加</button>
         </div>
       </div>
     </div>
+    <div class="card" style="padding:0;overflow:hidden">
+      <div x-show="peopleLoading" style="padding:20px;text-align:center"><span class="spinner"></span>読み込み中…</div>
+      <div x-show="!peopleLoading">
+        <div x-show="!people.length" class="alert alert-info" style="margin:16px">データがありません。インポートするか手動で追加してください。</div>
+        <table x-show="people.length">
+          <thead><tr><th><input type="checkbox" @change="toggleAllPeople($event)"></th><th>氏名</th><th>命日</th><th>属性</th><th>操作</th></tr></thead>
+          <tbody>
+            <template x-for="p in people" :key="p.id">
+              <tr>
+                <td><input type="checkbox" :value="p.id" x-model="selectedPeople"></td>
+                <td x-text="p.name"></td><td x-text="p.death_date"></td>
+                <td><template x-for="[k,v] in personAttrs(p)" :key="k"><span class="badge badge-blue" style="margin:1px" x-text="k+': '+v"></span></template></td>
+                <td><button class="btn btn-outline btn-sm" @click="openEditPerson(p)">編集</button> <button class="btn btn-danger btn-sm" @click="deletePerson(p.id)">削除</button></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+        <div class="pagination" style="padding:10px 16px" x-show="peopleTotalPages>1">
+          <button class="page-btn" @click="peoplePage=1;loadPeople()" :disabled="peoplePage===1">«</button>
+          <button class="page-btn" @click="peoplePage--;loadPeople()" :disabled="peoplePage===1">‹</button>
+          <span style="font-size:13px;color:#666">ページ <strong x-text="peoplePage"></strong> / <span x-text="peopleTotalPages"></span></span>
+          <button class="page-btn" @click="peoplePage++;loadPeople()" :disabled="peoplePage>=peopleTotalPages">›</button>
+          <button class="page-btn" @click="peoplePage=peopleTotalPages;loadPeople()" :disabled="peoplePage>=peopleTotalPages">»</button>
+        </div>
+      </div>
+    </div>
+    <div class="card" x-show="selectedPeople.length" style="padding:10px 16px;display:flex;gap:10px;align-items:center">
+      <span style="font-size:14px"><strong x-text="selectedPeople.length"></strong>件選択中</span>
+      <button class="btn btn-primary btn-sm" @click="tab='calculate';calcScope='selected'">→ 年忌計算</button>
+      <button class="btn btn-outline btn-sm" @click="selectedPeople=[]">選択解除</button>
+    </div>
+  </div>
 
-    <!-- ═══ TAB: Editor ══════════════════════════════════════════════ -->
-    <div class="editor-shell" x-show="activeTab === 'editor'">
+  <!-- ══════════════════════════════════════════════════
+       TAB ③ 年忌計算
+  ══════════════════════════════════════════════════ -->
+  <div class="panel" x-show="tab==='calculate'">
+    <div class="card">
+      <div class="card-title">年忌計算</div>
+      <div class="form-row" style="align-items:flex-end;gap:20px;flex-wrap:wrap">
+        <div class="field"><label>対象年</label><input type="number" x-model.number="calcYear" min="1900" max="2200" style="width:110px"></div>
+        <div class="field"><label>対象者</label>
+          <div style="font-size:14px;color:#444;display:flex;gap:16px;align-items:center;height:38px">
+            <label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="radio" name="cs" value="all" x-model="calcScope"> 全員</label>
+            <label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="radio" name="cs" value="selected" x-model="calcScope"> 選択中（<span x-text="selectedPeople.length"></span>件）</label>
+          </div>
+        </div>
+        <button class="btn btn-primary" @click="doCalculate()" :disabled="calculating||(calcScope==='selected'&&!selectedPeople.length)">
+          <span x-show="calculating"><span class="spinner"></span></span>計算実行
+        </button>
+      </div>
+      <div class="alert alert-error" x-show="calcError" x-text="calcError"></div>
+    </div>
+    <div x-show="calcResults">
+      <div class="results-bar">
+        <span style="font-size:14px"><strong x-text="calcResults&&calcResults.total_entries||0"></strong>件ヒット　<strong x-text="calcResults&&calcResults.groups&&calcResults.groups.length||0"></strong>グループ</span>
+        <div style="flex:1"></div>
+        <button class="btn btn-success" @click="tab='editor'">📄 文書エディタで開く →</button>
+      </div>
+      <div class="card" style="padding:0;overflow:hidden" x-show="calcResults&&calcResults.groups">
+        <table><thead><tr><th>年忌名</th><th>件数</th><th>代表</th></tr></thead>
+        <tbody><template x-for="g in (calcResults&&calcResults.groups||[])" :key="g.key">
+          <tr><td><span class="badge badge-blue" x-text="g.nenki_name"></span></td><td x-text="g.entries.length+'件'"></td><td x-text="g.entries[0]&&g.entries[0].name||''"></td></tr>
+        </template></tbody></table>
+      </div>
+    </div>
+  </div>
 
-      <!-- Left: Widget Palette + Page Settings -->
-      <div class="editor-sidebar">
-        <div class="sidebar-title">ページ設定</div>
-        <div class="prop-group">
-          <label class="prop-label">文書タイトル</label>
-          <input type="text" x-model="layout.title" class="prop-input" style="font-size:12px">
-        </div>
-        <div class="prop-row">
-          <label>向き</label>
-          <select x-model="layout.page_orientation" style="font-size:12px">
-            <option value="landscape">横 (A4)</option>
-            <option value="portrait">縦 (A4)</option>
+  <!-- ══════════════════════════════════════════════════
+       TAB ④ 文書エディタ
+  ══════════════════════════════════════════════════ -->
+  <div class="ed-shell" x-show="tab==='editor'">
+
+    <!-- ── Left sidebar ──────────────────────────────── -->
+    <div class="ed-left">
+
+      <!-- Page settings -->
+      <div class="sec">
+        <div class="sec-title">ページ設定</div>
+        <div class="sec-row"><label>タイトル</label></div>
+        <input type="text" x-model="layout.title" style="width:100%;margin-bottom:7px;font-size:13px">
+        <div class="sec-row"><label>向き</label>
+          <select x-model="layout.page_orientation" style="width:110px;font-size:13px">
+            <option value="landscape">横（A4）</option>
+            <option value="portrait">縦（A4）</option>
           </select>
         </div>
-        <div class="prop-row">
-          <label>段組み</label>
-          <select x-model.number="layout.columns" style="font-size:12px">
-            <option value="1">1段</option>
-            <option value="2">2段</option>
+        <div class="sec-row"><label>段組み</label>
+          <select x-model.number="layout.columns" style="width:70px;font-size:13px">
+            <option value="1">1段</option><option value="2">2段</option>
           </select>
         </div>
-        <div class="prop-row">
-          <label>文字方向</label>
-          <select x-model="layout.text_direction" style="font-size:12px">
-            <option value="tategaki">縦書き</option>
-            <option value="yokogumi">横書き</option>
-          </select>
-        </div>
-        <div class="prop-row">
-          <label>フォント</label>
-          <select x-model="layout.font_family" style="font-size:12px">
+        <div class="sec-row"><label>フォント</label>
+          <select x-model="layout.font_family" style="font-size:12px;width:120px">
             <option value="MS Mincho">MS 明朝</option>
             <option value="MS Gothic">MS ゴシック</option>
             <option value="Yu Mincho">游明朝</option>
             <option value="Yu Gothic">游ゴシック</option>
           </select>
         </div>
-        <div class="prop-row">
-          <label>区切り</label>
-          <input type="text" x-model="layout.field_separator" style="width:40px; font-size:12px" maxlength="3">
+        <div class="sec-row"><label>区切り</label>
+          <input type="text" x-model="layout.field_separator" style="width:44px;font-size:13px" maxlength="3">
         </div>
+        <button class="btn btn-outline btn-sm" style="width:100%;margin-top:6px" @click="resetLayout()">♻ 標準配置に戻す</button>
+      </div>
 
-        <div class="sidebar-title" style="margin-top:12px;">ウィジェット</div>
-        <div class="sidebar-title" style="font-size:10px; color:#aaa; font-weight:400;">ドラッグしてキャンバスへ</div>
-        <div class="widget-palette">
-          <template x-for="wt in widgetTypes" :key="wt.type">
-            <div class="palette-item" draggable="true"
-                 @dragstart="dragPaletteStart($event, wt.type)"
-                 x-text="wt.icon + ' ' + wt.label">
-            </div>
+      <!-- Widget palette -->
+      <div class="sec">
+        <div class="sec-title">ウィジェット追加</div>
+        <button class="pal-btn" @click="addWidget('title')"><span class="pal-ico">📌</span>タイトル</button>
+        <button class="pal-btn" @click="addWidget('group_header')"><span class="pal-ico">📋</span>年忌グループ見出し</button>
+        <button class="pal-btn" @click="addWidget('entry')"><span class="pal-ico">👤</span>データ行</button>
+        <button class="pal-btn" @click="addWidget('spacer')"><span class="pal-ico">⬜</span>スペーサー</button>
+        <button class="pal-btn" @click="addWidget('page_break')"><span class="pal-ico">📄</span>改ページ</button>
+      </div>
+
+      <!-- Field selection -->
+      <div class="sec" style="flex:1">
+        <div class="sec-title">表示フィールド選択</div>
+        <div x-show="!calcResults" style="font-size:13px;color:#aaa;padding:8px 0">③計算タブを先に実行</div>
+        <div x-show="calcResults">
+          <template x-for="f in (calcResults&&calcResults.available_fields||[])" :key="f">
+            <label class="fld-chk"><input type="checkbox" :value="f" x-model="selectedFields"> <span x-text="f"></span></label>
           </template>
         </div>
-
-        <div style="margin-top:auto; padding-top:12px;">
-          <div class="sidebar-title">データフィールド選択</div>
-          <div style="font-size:11px; color:#888; margin-bottom:6px;" x-show="!calcResults">先に年忌計算を実行してください</div>
-          <div class="field-checkboxes" x-show="calcResults">
-            <template x-for="f in (calcResults && calcResults.available_fields || [])" :key="f">
-              <label class="field-check">
-                <input type="checkbox" :value="f" x-model="selectedFields">
-                <span x-text="f"></span>
-              </label>
-            </template>
-          </div>
-        </div>
       </div>
 
-      <!-- Center: Paper Canvas -->
-      <div class="editor-canvas-area">
-        <div class="paper" :class="{portrait: layout.page_orientation === 'portrait'}"
-             @dragover.prevent @drop="dropOnCanvas($event)">
+    </div><!-- /ed-left -->
 
-          <!-- Title preview -->
-          <div class="preview-title"
-               :style="'font-size:' + (titleWidget && titleWidget.font_size || 24) + 'px; font-weight:' + (titleWidget && titleWidget.bold ? 'bold' : 'normal') + '; font-family:' + layout.font_family"
-               x-text="layout.title || '（タイトル未設定）'">
-          </div>
+    <!-- ── Center canvas ─────────────────────────────── -->
+    <div class="ed-center">
+      <div class="canvas-toolbar">
+        <span class="canvas-hint">⟳ハンドルを縦↕横↔にドラッグ → 文字方向変更　◢コーナードラッグ → サイズ変更　ボディドラッグ → 移動</span>
+        <label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer">
+          <input type="checkbox" x-model="showGuide" style="width:14px;height:14px"> 余白ガイド
+        </label>
+      </div>
+      <div class="canvas-scroll">
+        <div class="paper" :class="layout.page_orientation==='portrait'?'portrait':'landscape'"
+             @pointerdown.self="selId=null" x-ref="paper">
+          <div class="margin-guide" x-show="showGuide"></div>
 
-          <!-- Widget canvas -->
-          <div class="canvas-widgets" id="canvas-widgets"
-               x-show="canvasWidgets.length > 0">
-            <template x-for="(w, idx) in canvasWidgets" :key="w.id">
-              <div class="canvas-widget" :class="{selected: selectedWidget && selectedWidget.id === w.id}"
-                   @click.stop="selectWidget(w)">
-                <button class="widget-remove" @click.stop="removeWidget(idx)">✕</button>
+          <template x-for="w in canvasWidgets" :key="w.id">
+            <div class="cw" :class="{selected:selId===w.id}"
+                 :style="cwStyle(w)"
+                 @pointerdown="cwDown($event,w)">
 
-                <!-- Title widget -->
-                <div x-show="w.type === 'title'" class="preview-title"
-                     :style="'font-size:' + w.font_size + 'px; font-family:' + layout.font_family">
-                  <span x-text="layout.title"></span>
-                </div>
+              <!-- Content body with writing-mode -->
+              <div class="cw-body" :class="'wm-'+(w.dir||'yokogumi')" :style="cwBodyStyle(w)">
 
-                <!-- Group header widget -->
-                <div x-show="w.type === 'group_header'" class="preview-header"
-                     :style="'font-size:' + w.font_size + 'px; font-family:' + layout.font_family">
-                  <span x-text="(w.template || '{nenki_name}　{anniversary_date}').replace('{nenki_name}','三回忌').replace('{anniversary_date}','令和八年三月十六日')"></span>
-                </div>
-
-                <!-- Entry widget -->
-                <div x-show="w.type === 'entry'" class="preview-entry"
-                     :style="'font-size:' + w.font_size + 'px; font-family:' + layout.font_family">
-                  <span x-text="sampleEntry(w)"></span>
-                </div>
-
-                <!-- Spacer widget -->
-                <div x-show="w.type === 'spacer'" class="preview-spacer">
-                  ─── スペース (<span x-text="w.lines"></span>行) ───
-                </div>
-
-                <!-- Page break widget -->
-                <div x-show="w.type === 'page_break'" class="preview-pagebreak">
-                  ── 改ページ ──
-                </div>
-              </div>
-            </template>
-          </div>
-
-          <!-- Empty drop hint -->
-          <div class="canvas-empty" x-show="canvasWidgets.length === 0">
-            ウィジェットをここへドラッグ<br>
-            <small style="color:#ccc">左のパレットからドラッグ&ドロップ</small>
-          </div>
-
-          <!-- Preview: data sample -->
-          <div x-show="calcResults && calcResults.groups && calcResults.groups.length > 0" style="margin-top:16px; border-top:1px dashed #ddd; padding-top:12px;">
-            <div style="font-size:11px; color:#bbb; margin-bottom:8px;">── データプレビュー (最初のグループ) ──</div>
-            <template x-for="g in (calcResults && calcResults.groups || []).slice(0,1)" :key="g.key">
-              <div>
-                <div :style="'font-size:' + (headerWidget && headerWidget.font_size || 16) + 'px; font-weight:bold; font-family:' + layout.font_family"
-                     x-text="g.entries[0] && g.entries[0]['年忌名'] || g.nenki_name"></div>
-                <template x-for="e in g.entries.slice(0,3)" :key="e.person_id">
-                  <div :style="'font-size:' + (entryWidget && entryWidget.font_size || 12) + 'px; font-family:' + layout.font_family"
-                       x-text="selectedFields.filter(f => f !== '年忌名').map(f => e[f] || '').join(layout.field_separator || '　')">
-                  </div>
+                <template x-if="w.type==='title'">
+                  <span x-text="layout.title||'（タイトル）'"></span>
                 </template>
-              </div>
-            </template>
-          </div>
-        </div>
-      </div>
 
-      <!-- Right: Properties Panel -->
-      <div class="editor-props">
+                <template x-if="w.type==='group_header'">
+                  <span x-text="fmtTmpl(w)"></span>
+                </template>
+
+                <template x-if="w.type==='entry'">
+                  <template x-for="(e,i) in sampleEntries().slice(0,6)" :key="i">
+                    <div x-text="fmtEntry(e)" :style="'margin-bottom:'+(w.dir==='tategaki'?'0':'2px')"></div>
+                  </template>
+                </template>
+
+                <template x-if="w.type==='spacer'">
+                  <div style="opacity:.35;font-size:11px" x-text="'スペース × '+(w.lines||1)+'行'"></div>
+                </template>
+
+                <template x-if="w.type==='page_break'">
+                  <div style="border-top:2px dashed #c62828;color:#c62828;font-size:11px;padding-top:3px">── 改ページ ──</div>
+                </template>
+              </div><!-- /cw-body -->
+
+              <!-- Color band -->
+              <div class="cw-band" :class="'wm-'+(w.dir||'yokogumi')+' band-'+w.type.replace('_','')"></div>
+              <!-- Border overlay -->
+              <div class="cw-border"></div>
+              <!-- Direction badge -->
+              <div class="cw-dirbadge" x-text="w.dir==='tategaki'?'↕縦':'↔横'"></div>
+
+              <!-- Rotation handle (selected only) -->
+              <div class="rot-hdl" x-show="selId===w.id"
+                   @pointerdown.stop="rotDown($event,w)"
+                   title="上下ドラッグ→縦書き　左右ドラッグ→横書き">⟳</div>
+
+              <!-- Resize handle (selected only) -->
+              <div class="rsz-hdl" x-show="selId===w.id"
+                   @pointerdown.stop="rszDown($event,w)"
+                   title="ドラッグしてサイズ変更">◢</div>
+
+            </div><!-- /cw -->
+          </template>
+
+        </div><!-- /paper -->
+      </div><!-- /canvas-scroll -->
+    </div><!-- /ed-center -->
+
+    <!-- ── Right properties + generate ──────────────── -->
+    <div class="ed-right">
+      <div class="prop-head" x-text="selWidget ? wLabel(selWidget.type) : 'ウィジェット設定'"></div>
+
+      <div class="prop-body">
         <!-- No selection -->
-        <div x-show="!selectedWidget" style="color:#aaa; font-size:12px; padding:20px 0; text-align:center;">
-          ウィジェットを選択してプロパティを編集
+        <div x-show="!selWidget" style="color:#aaa;font-size:14px;padding:16px 0;text-align:center">
+          ← ウィジェットをクリックして選択
         </div>
 
         <!-- Widget properties -->
-        <div x-show="selectedWidget">
-          <div class="sidebar-title" x-text="selectedWidget && widgetLabel(selectedWidget.type)"></div>
+        <div x-show="selWidget">
 
-          <!-- Common: font size -->
-          <div class="prop-group" x-show="selectedWidget && selectedWidget.type !== 'spacer' && selectedWidget.type !== 'page_break'">
-            <label class="prop-label">フォントサイズ (pt)</label>
-            <input type="number" x-model.number="selectedWidget.font_size" class="prop-input" min="6" max="72" @change="syncWidgets()">
-          </div>
-
-          <!-- Common: bold -->
-          <div class="prop-row" x-show="selectedWidget && selectedWidget.type !== 'spacer' && selectedWidget.type !== 'page_break'">
-            <label>太字</label>
-            <input type="checkbox" x-model="selectedWidget.bold" @change="syncWidgets()">
-          </div>
-
-          <!-- Common: align -->
-          <div class="prop-group" x-show="selectedWidget && selectedWidget.type !== 'spacer' && selectedWidget.type !== 'page_break'">
-            <label class="prop-label">揃え</label>
-            <select x-model="selectedWidget.align" class="prop-input" @change="syncWidgets()">
-              <option value="left">左揃え</option>
-              <option value="center">中央</option>
-              <option value="right">右揃え</option>
-            </select>
-          </div>
-
-          <!-- Group header: template -->
-          <div class="prop-group" x-show="selectedWidget && selectedWidget.type === 'group_header'">
-            <label class="prop-label">テンプレート</label>
-            <textarea x-model="selectedWidget.template" class="prop-input" rows="2" style="font-size:12px" @change="syncWidgets()"
-              placeholder="{nenki_name}　{anniversary_date}"></textarea>
-            <div style="font-size:11px; color:#888; margin-top:4px;">
-              変数: {nenki_name}, {anniversary_date}
+          <!-- Direction -->
+          <div class="prop-sect" x-show="selWidget&&selWidget.type!=='page_break'">
+            <span class="prop-lbl">文字方向</span>
+            <div class="dir-toggle">
+              <button class="dir-btn" :class="{active:selWidget&&selWidget.dir==='tategaki'}"
+                      @click="if(selWidget)selWidget.dir='tategaki'">↕ 縦書き</button>
+              <button class="dir-btn" :class="{active:selWidget&&selWidget.dir==='yokogumi'}"
+                      @click="if(selWidget)selWidget.dir='yokogumi'">↔ 横書き</button>
             </div>
           </div>
 
-          <!-- Entry: fields order -->
-          <div class="prop-group" x-show="selectedWidget && selectedWidget.type === 'entry'">
-            <label class="prop-label">表示フィールド順</label>
-            <div style="font-size:11px; color:#888; margin-bottom:4px;">左サイドバーのフィールド選択に連動します</div>
-            <div style="font-size:12px; color:#555;">
-              選択済み: <span x-text="selectedFields.filter(f => f !== '年忌名').join(' → ')"></span>
-            </div>
-            <div class="prop-row" style="margin-top:6px;">
-              <label>等幅パディング</label>
-              <input type="checkbox" x-model="selectedWidget.padding" @change="syncWidgets()">
+          <!-- Font size -->
+          <div class="prop-sect" x-show="selWidget&&selWidget.type!=='spacer'&&selWidget.type!=='page_break'">
+            <span class="prop-lbl">フォントサイズ（pt）</span>
+            <div class="size-ctrl">
+              <button @click="if(selWidget)selWidget.fontSize=Math.max(8,(selWidget.fontSize||14)-2)">－</button>
+              <input type="number" x-model.number="selWidget.fontSize" min="8" max="72" style="font-size:15px;text-align:center">
+              <button @click="if(selWidget)selWidget.fontSize=Math.min(72,(selWidget.fontSize||14)+2)">＋</button>
             </div>
           </div>
 
-          <!-- Spacer: lines -->
-          <div class="prop-group" x-show="selectedWidget && selectedWidget.type === 'spacer'">
-            <label class="prop-label">空行数</label>
-            <input type="number" x-model.number="selectedWidget.lines" class="prop-input" min="1" max="10" @change="syncWidgets()">
+          <!-- Bold -->
+          <div class="prop-sect" x-show="selWidget&&selWidget.type!=='spacer'&&selWidget.type!=='page_break'">
+            <button class="bold-btn" :class="{active:selWidget&&selWidget.bold}"
+                    @click="if(selWidget)selWidget.bold=!selWidget.bold">
+              <span x-text="selWidget&&selWidget.bold?'B 太字（ON）':'B 太字（OFF）'"></span>
+            </button>
           </div>
 
-          <!-- Delete widget -->
-          <div style="margin-top:16px; border-top:1px solid #f0f0f0; padding-top:12px;">
-            <button class="btn btn-danger btn-sm" @click="removeSelectedWidget()">このウィジェットを削除</button>
+          <!-- Alignment -->
+          <div class="prop-sect" x-show="selWidget&&selWidget.type!=='spacer'&&selWidget.type!=='page_break'">
+            <span class="prop-lbl">揃え</span>
+            <div class="align-grp">
+              <button class="align-btn" :class="{active:selWidget&&selWidget.align==='left'}"   @click="if(selWidget)selWidget.align='left'">← 左</button>
+              <button class="align-btn" :class="{active:selWidget&&selWidget.align==='center'}" @click="if(selWidget)selWidget.align='center'">中央</button>
+              <button class="align-btn" :class="{active:selWidget&&selWidget.align==='right'}"  @click="if(selWidget)selWidget.align='right'">右 →</button>
+            </div>
           </div>
-        </div>
 
-        <!-- Generate section -->
-        <div style="margin-top:auto; padding-top:20px; border-top:1px solid #f0f0f0; position:sticky; bottom:0; background:#fff;">
-          <div class="sidebar-title">ドキュメント生成</div>
-          <div class="alert alert-info" style="margin-bottom:8px;" x-show="!calcResults">
-            計算タブで年忌計算を先に実行してください
+          <!-- Group header template -->
+          <div class="prop-sect" x-show="selWidget&&selWidget.type==='group_header'">
+            <span class="prop-lbl">テンプレート</span>
+            <textarea x-model="selWidget.template" rows="2"
+                      style="width:100%;font-size:13px;padding:6px"
+                      placeholder="{nenki_name}　{anniversary_date}"></textarea>
+            <div style="font-size:11px;color:#999;margin-top:3px">変数: {nenki_name} {anniversary_date}</div>
           </div>
-          <div x-show="calcResults && selectedFields.length === 0" class="alert alert-error" style="margin-bottom:8px;">
-            左パネルでフィールドを選択してください
-          </div>
-          <div style="display:flex; flex-direction:column; gap:6px;">
-            <button class="btn btn-outline" @click="doPrint()" :disabled="!calcResults || selectedFields.length===0">
-              🖨 印刷
-            </button>
-            <button class="btn btn-primary" @click="doGenerateWord()" :disabled="!calcResults || selectedFields.length===0 || generating">
-              <span x-show="generating"><span class="spinner"></span></span>
-              📄 Word (.docx)
-            </button>
-            <button class="btn btn-success" @click="doGeneratePDF()" :disabled="!calcResults || selectedFields.length===0 || generating">
-              📑 PDF
+
+          <!-- Entry: padding -->
+          <div class="prop-sect" x-show="selWidget&&selWidget.type==='entry'">
+            <span class="prop-lbl">等幅パディング</span>
+            <button class="bold-btn" :class="{active:selWidget&&selWidget.padding}"
+                    @click="if(selWidget)selWidget.padding=!selWidget.padding">
+              <span x-text="selWidget&&selWidget.padding?'ON（文字幅揃え）':'OFF'"></span>
             </button>
           </div>
-          <div class="alert alert-error" x-show="genError" x-text="genError" style="margin-top:8px;"></div>
-        </div>
+
+          <!-- Spacer lines -->
+          <div class="prop-sect" x-show="selWidget&&selWidget.type==='spacer'">
+            <span class="prop-lbl">空行数</span>
+            <div class="size-ctrl">
+              <button @click="if(selWidget)selWidget.lines=Math.max(1,(selWidget.lines||1)-1)">－</button>
+              <input type="number" x-model.number="selWidget.lines" min="1" max="20" style="font-size:15px;text-align:center">
+              <button @click="if(selWidget)selWidget.lines=Math.min(20,(selWidget.lines||1)+1)">＋</button>
+            </div>
+          </div>
+
+          <!-- Position/Size info -->
+          <div class="prop-sect" style="font-size:12px;color:#aaa;border-top:1px solid #f0f0f0;padding-top:10px" x-show="selWidget">
+            <div x-text="selWidget?'位置: X='+Math.round(selWidget.x)+' Y='+Math.round(selWidget.y):''"></div>
+            <div x-text="selWidget?'サイズ: '+Math.round(selWidget.w)+'×'+Math.round(selWidget.h):''"></div>
+          </div>
+
+          <!-- Delete -->
+          <div class="prop-sect">
+            <button class="btn btn-danger" style="width:100%;margin-top:4px" @click="removeSelWidget()">
+              🗑 このウィジェットを削除
+            </button>
+          </div>
+        </div><!-- /selWidget -->
+      </div><!-- /prop-body -->
+
+      <!-- Generate buttons -->
+      <div class="gen-section">
+        <div class="gen-title">📤 出力</div>
+        <div class="alert alert-info" x-show="!calcResults" style="margin-bottom:10px;font-size:13px">③計算タブを先に実行してください</div>
+        <div class="alert alert-error" x-show="calcResults&&!selectedFields.length" style="margin-bottom:10px;font-size:13px">左のフィールドを選択してください</div>
+        <button class="gen-btn gen-print" @click="doPrint()" :disabled="!calcResults||!selectedFields.length">
+          <span>🖨</span><span>印刷</span>
+        </button>
+        <button class="gen-btn gen-word" @click="doGenerateWord()" :disabled="!calcResults||!selectedFields.length||generating">
+          <span x-show="generating"><span class="spinner"></span></span><span>📄</span><span>Word ダウンロード</span>
+        </button>
+        <button class="gen-btn gen-pdf" @click="doGeneratePDF()" :disabled="!calcResults||!selectedFields.length||generating">
+          <span>📑</span><span>PDF ダウンロード</span>
+        </button>
+        <div class="alert alert-error" x-show="genError" x-text="genError" style="margin-top:8px"></div>
       </div>
-    </div>
 
-  </div><!-- .main -->
+    </div><!-- /ed-right -->
+  </div><!-- /ed-shell -->
 
-  <!-- Print area (hidden, shown on print) -->
-  <div id="print-area" style="display:none;">
-    <div id="print-content"></div>
-  </div>
+  </div><!-- /.main -->
 
-  <!-- Add/Edit Person Modal -->
+  <!-- Print area -->
+  <div id="print-area" style="display:none"><div id="print-content"></div></div>
+
+  <!-- Person modal -->
   <div class="modal-overlay" x-show="showPersonModal" @click.self="showPersonModal=false">
     <div class="modal">
-      <div class="modal-title" x-text="editingPerson && editingPerson.id ? '人物編集' : '人物追加'"></div>
-      <div class="form-row">
-        <div class="field" style="flex:1">
-          <label>氏名 *</label>
-          <input type="text" x-model="editingPerson.name" class="prop-input">
-        </div>
-      </div>
-      <div class="form-row">
-        <div class="field" style="flex:1">
-          <label>命日 (YYYY-MM-DD) *</label>
-          <input type="text" x-model="editingPerson.death_date" placeholder="例: 2020-03-15">
-        </div>
-      </div>
-      <div style="margin-bottom:10px;">
-        <div style="font-size:12px; color:#666; margin-bottom:6px;">追加属性</div>
-        <template x-for="(attr, i) in editingPerson.attrList" :key="i">
-          <div class="form-row" style="gap:6px; margin-bottom:4px;">
-            <input type="text" x-model="attr.key" placeholder="項目名" style="width:100px; font-size:12px">
-            <input type="text" x-model="attr.value" placeholder="値" style="flex:1; font-size:12px">
+      <div class="modal-title" x-text="editingPerson.id?'人物編集':'人物追加'"></div>
+      <div class="form-row"><div class="field" style="flex:1"><label>氏名 *</label><input type="text" x-model="editingPerson.name"></div></div>
+      <div class="form-row"><div class="field" style="flex:1"><label>命日 (YYYY-MM-DD) *</label><input type="text" x-model="editingPerson.death_date" placeholder="例: 2020-03-15"></div></div>
+      <div style="margin-bottom:10px">
+        <div style="font-size:13px;color:#666;margin-bottom:6px">追加属性</div>
+        <template x-for="(a,i) in editingPerson.attrList" :key="i">
+          <div class="form-row" style="gap:6px;margin-bottom:4px">
+            <input type="text" x-model="a.key" placeholder="項目名" style="width:100px;font-size:13px">
+            <input type="text" x-model="a.value" placeholder="値" style="flex:1;font-size:13px">
             <button class="btn btn-danger btn-sm" @click="editingPerson.attrList.splice(i,1)">✕</button>
           </div>
         </template>
         <button class="btn btn-outline btn-sm" @click="editingPerson.attrList.push({key:'',value:''})">＋ 属性追加</button>
       </div>
-      <div class="form-row" style="justify-content:flex-end;">
+      <div class="form-row" style="justify-content:flex-end">
         <button class="btn btn-outline" @click="showPersonModal=false">キャンセル</button>
         <button class="btn btn-primary" @click="savePerson()">保存</button>
       </div>
     </div>
   </div>
 
-</div><!-- .app -->
+</div><!-- /.app -->
 
-<!-- Print styles -->
 <style>
 @media print {
-  body > * { display: none !important; }
-  #print-area { display: block !important; }
-  #print-area .print-page {
-    width: 297mm; min-height: 210mm; padding: 13mm;
-    page-break-after: always;
-  }
+  body>*{display:none!important}
+  #print-area{display:block!important}
+  #print-area .pp{width:297mm;min-height:210mm;padding:13mm;page-break-after:always}
 }
 </style>
 
 <script>
-function app() {
+let _uid = 0;
+function uid(){ return 'w'+(++_uid)+'_'+Math.random().toString(36).slice(2,5); }
+function csrfToken(){
+  const c = document.cookie.split(';').find(c=>c.trim().startsWith('csrftoken='));
+  return c ? c.split('=')[1].trim() : '';
+}
+function csrfH(){ return {'X-CSRFToken': csrfToken()}; }
+function dlBlob(blob, name){ const u=URL.createObjectURL(blob),a=document.createElement('a'); a.href=u;a.download=name;a.click();URL.revokeObjectURL(u); }
+
+function app(){
   return {
     // Nav
+    tab: 'import',
     tabs: [
-      {id: 'import', label: '① インポート'},
-      {id: 'people', label: '② 人物一覧'},
-      {id: 'calculate', label: '③ 年忌計算'},
-      {id: 'editor', label: '④ 文書エディタ'},
+      {id:'import',   label:'① インポート'},
+      {id:'people',   label:'② 人物一覧'},
+      {id:'calculate',label:'③ 年忌計算'},
+      {id:'editor',   label:'④ 文書エディタ'},
     ],
-    activeTab: 'import',
-
-    // Stats
-    stats: {total: 0},
-
-    // People
-    people: [],
-    peopleLoading: false,
-    peopleSearch: '',
-    peoplePage: 1,
-    peopleTotalPages: 1,
-    selectedPeople: [],
+    stats: {total:0},
 
     // Import
-    importStep: 1,
-    importFile: null,
-    importing: false,
-    importSheets: {},
-    importSelectedSheet: '',
-    importMapping: {},
-    importPreviewRows: [],
-    importResult: {},
+    importStep:1, importFile:null, importing:false,
+    importSheets:{}, importSelectedSheet:'', importMapping:{}, importPreviewRows:[], importResult:{},
+
+    // People
+    people:[], peopleLoading:false, peopleSearch:'', peoplePage:1, peopleTotalPages:1,
+    selectedPeople:[], showPersonModal:false,
+    editingPerson:{name:'',death_date:'',attrList:[]},
 
     // Calculate
-    calcYear: new Date().getFullYear(),
-    calcScope: 'all',
-    calculating: false,
-    calcResults: null,
-    calcError: '',
+    calcYear: new Date().getFullYear(), calcScope:'all',
+    calculating:false, calcResults:null, calcError:'',
 
     // Editor
-    selectedFields: [],
-    canvasWidgets: [],
-    selectedWidget: null,
-    generating: false,
-    genError: '',
+    canvasWidgets:[], selId:null, selectedFields:[],
+    showGuide:true, generating:false, genError:'',
+    _ia: null,  // active interaction: {type, w, sx,sy, ox,oy, ow,oh, cx,cy}
 
-    layout: {
-      title: '年忌法要 名簿',
-      columns: 1,
-      text_direction: 'tategaki',
-      font_family: 'MS Mincho',
-      page_orientation: 'landscape',
-      field_separator: '　',
+    layout:{
+      title:'年忌法要 名簿', columns:1,
+      text_direction:'tategaki', font_family:'MS Mincho',
+      page_orientation:'landscape', field_separator:'　',
     },
 
-    widgetTypes: [
-      {type: 'title',        icon: '📌', label: '文書タイトル'},
-      {type: 'group_header', icon: '📋', label: '年忌グループ見出し'},
-      {type: 'entry',        icon: '👤', label: 'データ行 (エントリ)'},
-      {type: 'spacer',       icon: '⬜', label: 'スペーサー'},
-      {type: 'page_break',   icon: '📄', label: '改ページ'},
-    ],
-
-    // Modal
-    showPersonModal: false,
-    editingPerson: {name: '', death_date: '', attrList: []},
-
-    // Computed helpers
-    get titleWidget() { return this.canvasWidgets.find(w => w.type === 'title'); },
-    get headerWidget() { return this.canvasWidgets.find(w => w.type === 'group_header'); },
-    get entryWidget() { return this.canvasWidgets.find(w => w.type === 'entry'); },
-    get currentSheetCols() {
-      const s = this.importSheets[this.importSelectedSheet];
-      return s ? s.columns : [];
+    // ── Computed ───────────────────────────────────────
+    get selWidget(){ return this.canvasWidgets.find(w=>w.id===this.selId)||null; },
+    get paperW(){ return this.layout.page_orientation==='portrait'?620:877; },
+    get paperH(){ return this.layout.page_orientation==='portrait'?877:620; },
+    get currentSheetCols(){
+      const s=this.importSheets[this.importSelectedSheet];
+      return s?s.columns:[];
     },
 
-    async init() {
+    // ── Init ───────────────────────────────────────────
+    async init(){
       await this.loadStats();
-      this.loadDefaultWidgets();
-      this.$nextTick(() => this.initSortable());
+      this.resetLayout();
     },
 
-    loadDefaultWidgets() {
-      this.canvasWidgets = [
-        {id: uid(), type: 'title',        font_size: 36, bold: true,  align: 'center'},
-        {id: uid(), type: 'group_header', font_size: 28, bold: true,  align: 'center', template: '{nenki_name}　{anniversary_date}'},
-        {id: uid(), type: 'entry',        font_size: 18, bold: false, align: 'left', padding: true},
-        {id: uid(), type: 'spacer',       lines: 1},
+    // ── Layout helpers ─────────────────────────────────
+    resetLayout(){
+      const W=this.paperW, H=this.paperH, m=30;
+      const isT = this.layout.text_direction==='tategaki';
+      this.canvasWidgets = isT ? [
+        {id:uid(),type:'title',        x:W-m-52, y:m,   w:52,      h:H-m*2, dir:'tategaki', fontSize:26, bold:true,  align:'center'},
+        {id:uid(),type:'group_header', x:W-m-164,y:m,   w:102,     h:H-m*2, dir:'tategaki', fontSize:20, bold:true,  align:'center', template:'{nenki_name}　{anniversary_date}'},
+        {id:uid(),type:'entry',        x:m,      y:m,   w:W-m*2-174,h:H-m*2,dir:'tategaki', fontSize:16, bold:false, align:'left',   padding:true},
+        {id:uid(),type:'spacer',       x:m,      y:H-m-18,w:W-m*2-174,h:18, dir:'tategaki', lines:1},
+      ] : [
+        {id:uid(),type:'title',        x:m,     y:m,     w:W-m*2, h:58,     dir:'yokogumi', fontSize:26, bold:true,  align:'center'},
+        {id:uid(),type:'group_header', x:m,     y:m+68,  w:W-m*2, h:50,     dir:'yokogumi', fontSize:20, bold:true,  align:'center', template:'{nenki_name}　{anniversary_date}'},
+        {id:uid(),type:'entry',        x:m,     y:m+128, w:W-m*2, h:H-m*2-138, dir:'yokogumi', fontSize:16, bold:false, align:'left', padding:true},
+        {id:uid(),type:'spacer',       x:m,     y:H-m-18,w:W-m*2, h:18,    dir:'yokogumi', lines:1},
+      ];
+      this.selId=null;
+    },
+
+    addWidget(type){
+      const W=this.paperW, H=this.paperH, m=30;
+      const isT=this.layout.text_direction==='tategaki';
+      const defaults={
+        title:        {x:W/2-30, y:m,     w:60,    h:H-m*2,  dir:isT?'tategaki':'yokogumi', fontSize:26, bold:true,  align:'center'},
+        group_header: {x:W/2-60, y:m,     w:120,   h:H-m*2,  dir:isT?'tategaki':'yokogumi', fontSize:20, bold:true,  align:'center', template:'{nenki_name}　{anniversary_date}'},
+        entry:        {x:m,      y:m,     w:W-m*2, h:H-m*2,  dir:isT?'tategaki':'yokogumi', fontSize:16, bold:false, align:'left',  padding:true},
+        spacer:       {x:m,      y:H/2,   w:W-m*2, h:20,     dir:isT?'tategaki':'yokogumi', lines:1},
+        page_break:   {x:m,      y:H/2-1, w:W-m*2, h:12,     dir:'yokogumi'},
+      };
+      const w={id:uid(),type,...(defaults[type]||{x:80,y:80,w:200,h:60})};
+      this.canvasWidgets.push(w);
+      this.selId=w.id;
+    },
+
+    removeSelWidget(){
+      const idx=this.canvasWidgets.findIndex(w=>w.id===this.selId);
+      if(idx>=0) this.canvasWidgets.splice(idx,1);
+      this.selId=null;
+    },
+
+    wLabel(type){
+      return {title:'📌 タイトル',group_header:'📋 年忌グループ見出し',entry:'👤 データ行',spacer:'⬜ スペーサー',page_break:'📄 改ページ'}[type]||type;
+    },
+
+    // ── Canvas styles ──────────────────────────────────
+    cwStyle(w){
+      return {
+        left:w.x+'px', top:w.y+'px', width:w.w+'px', height:w.h+'px',
+        zIndex: this.selId===w.id ? 100 : 2,
+      };
+    },
+
+    cwBodyStyle(w){
+      const bg={title:'rgba(74,108,247,.06)',group_header:'rgba(46,125,50,.06)',entry:'rgba(255,255,255,.95)',spacer:'rgba(200,200,200,.18)',page_break:'rgba(198,40,40,.04)'};
+      return {
+        fontSize:(w.fontSize||14)+'px',
+        fontWeight:w.bold?'bold':'normal',
+        fontFamily:this.layout.font_family,
+        textAlign:w.align||'left',
+        background:bg[w.type]||'rgba(255,255,255,.9)',
+        color:'#1a1a2e',
+        lineHeight:'1.6',
+      };
+    },
+
+    // ── Preview helpers ────────────────────────────────
+    fmtTmpl(w){
+      const t=w.template||'{nenki_name}　{anniversary_date}';
+      const g=this.calcResults?.groups?.[0];
+      const name=g?.entries?.[0]?.['年忌名']||g?.nenki_name||'三回忌';
+      const date=g?.entries?.[0]?.anniversary_date_kanji||'令和八年三月十六日';
+      return t.replace('{nenki_name}',name).replace('{anniversary_date}',date);
+    },
+
+    sampleEntries(){
+      if(this.calcResults?.groups?.length){
+        return this.calcResults.groups[0].entries.slice(0,6);
+      }
+      return [
+        {name:'山田　太郎',death_date_kanji:'令和元年五月十日',anniversary_date_kanji:'令和八年五月十日','法名':'○○院△△居士'},
+        {name:'鈴木　花子',death_date_kanji:'令和二年三月一日',anniversary_date_kanji:'令和八年三月一日'},
+        {name:'田中　次郎',death_date_kanji:'昭和六十年十一月廿日',anniversary_date_kanji:'令和八年十一月廿日'},
+        {name:'佐藤　三郎',death_date_kanji:'平成十年七月三日',anniversary_date_kanji:'令和八年七月三日'},
       ];
     },
 
-    initSortable() {
-      const el = document.getElementById('canvas-widgets');
-      if (!el) return;
-      Sortable.create(el, {
-        animation: 150,
-        handle: '.canvas-widget',
-        ghostClass: 'sortable-ghost',
-        onEnd: (evt) => {
-          const moved = this.canvasWidgets.splice(evt.oldIndex, 1)[0];
-          this.canvasWidgets.splice(evt.newIndex, 0, moved);
+    fmtEntry(e){
+      const fields=this.selectedFields.filter(f=>f!=='年忌名');
+      if(!fields.length) return '（フィールドを左で選択してください）';
+      return fields.map(f=>e[f]||'').join(this.layout.field_separator||'　');
+    },
+
+    // ── Pointer interactions ───────────────────────────
+    cwDown(e, w){
+      if(e.button!==0) return;
+      e.stopPropagation();
+      this.selId=w.id;
+      this._ia={type:'drag', w, sx:e.clientX, sy:e.clientY, ox:w.x, oy:w.y};
+    },
+
+    rotDown(e, w){
+      e.stopPropagation();
+      const rect=e.currentTarget.closest('.cw').getBoundingClientRect();
+      this._ia={type:'rot', w, cx:rect.left+rect.width/2, cy:rect.top+rect.height/2};
+    },
+
+    rszDown(e, w){
+      e.stopPropagation();
+      this._ia={type:'rsz', w, sx:e.clientX, sy:e.clientY, ow:w.w, oh:w.h};
+    },
+
+    ptrMove(e){
+      if(!this._ia) return;
+      const {type, w}=this._ia;
+      if(type==='drag'){
+        const nx=this._ia.ox+(e.clientX-this._ia.sx);
+        const ny=this._ia.oy+(e.clientY-this._ia.sy);
+        w.x=Math.max(0, Math.min(nx, this.paperW-20));
+        w.y=Math.max(0, Math.min(ny, this.paperH-20));
+      } else if(type==='rsz'){
+        w.w=Math.max(50,  this._ia.ow+(e.clientX-this._ia.sx));
+        w.h=Math.max(28,  this._ia.oh+(e.clientY-this._ia.sy));
+      } else if(type==='rot'){
+        const dx=e.clientX-this._ia.cx;
+        const dy=e.clientY-this._ia.cy;
+        if(Math.abs(dx)>12||Math.abs(dy)>12){
+          w.dir = Math.abs(dy)>Math.abs(dx) ? 'tategaki' : 'yokogumi';
         }
-      });
-    },
-
-    async loadStats() {
-      const r = await fetch('/api/people/?per_page=1');
-      const d = await r.json();
-      this.stats.total = d.total;
-    },
-
-    async loadPeople() {
-      this.peopleLoading = true;
-      const q = this.peopleSearch ? `&q=${encodeURIComponent(this.peopleSearch)}` : '';
-      const r = await fetch(`/api/people/?page=${this.peoplePage}&per_page=50${q}`);
-      const d = await r.json();
-      this.people = d.people;
-      this.peopleTotalPages = Math.ceil(d.total / d.per_page) || 1;
-      this.peopleLoading = false;
-    },
-
-    personAttrs(p) {
-      const skip = new Set(['id', 'name', 'death_date']);
-      return Object.entries(p).filter(([k]) => !skip.has(k));
-    },
-
-    toggleAllPeople(e) {
-      if (e.target.checked) {
-        this.selectedPeople = this.people.map(p => p.id);
-      } else {
-        this.selectedPeople = [];
       }
     },
 
-    async deletePerson(id) {
-      if (!confirm('削除しますか？')) return;
-      await fetch(`/api/people/${id}/`, {method: 'DELETE', headers: getCsrfHeaders()});
-      await this.loadPeople();
+    ptrUp(){ this._ia=null; },
+
+    // ── Stats / People ─────────────────────────────────
+    async loadStats(){
+      const r=await fetch('/api/people/?per_page=1');
+      const d=await r.json();
+      this.stats.total=d.total;
+    },
+
+    async loadPeople(){
+      this.peopleLoading=true;
+      const q=this.peopleSearch?`&q=${encodeURIComponent(this.peopleSearch)}`:'';
+      const r=await fetch(`/api/people/?page=${this.peoplePage}&per_page=50${q}`);
+      const d=await r.json();
+      this.people=d.people; this.peopleTotalPages=Math.ceil(d.total/d.per_page)||1;
+      this.peopleLoading=false;
+    },
+
+    personAttrs(p){
+      const skip=new Set(['id','name','death_date']);
+      return Object.entries(p).filter(([k])=>!skip.has(k));
+    },
+
+    toggleAllPeople(e){
+      this.selectedPeople = e.target.checked ? this.people.map(p=>p.id) : [];
+    },
+
+    async deletePerson(id){
+      if(!confirm('削除しますか？')) return;
+      await fetch(`/api/people/${id}/`,{method:'DELETE',headers:csrfH()});
+      await this.loadPeople(); await this.loadStats();
+    },
+
+    openAddPerson(){ this.editingPerson={name:'',death_date:'',attrList:[]}; this.showPersonModal=true; },
+    openEditPerson(p){
+      const skip=new Set(['id','name','death_date']);
+      this.editingPerson={id:p.id,name:p.name,death_date:p.death_date,
+        attrList:Object.entries(p).filter(([k])=>!skip.has(k)).map(([k,v])=>({key:k,value:v}))};
+      this.showPersonModal=true;
+    },
+
+    async savePerson(){
+      const body={name:this.editingPerson.name,death_date:this.editingPerson.death_date,
+        attributes:Object.fromEntries(this.editingPerson.attrList.filter(a=>a.key).map(a=>[a.key,a.value]))};
+      const h={...csrfH(),'Content-Type':'application/json'};
+      if(this.editingPerson.id){
+        await fetch(`/api/people/${this.editingPerson.id}/`,{method:'PUT',headers:h,body:JSON.stringify(body)});
+      } else {
+        await fetch('/api/people/',{method:'POST',headers:h,body:JSON.stringify(body)});
+      }
+      this.showPersonModal=false; await this.loadPeople(); await this.loadStats();
+    },
+
+    // ── Import ─────────────────────────────────────────
+    async doImportPreview(){
+      if(!this.importFile) return;
+      this.importing=true;
+      const fd=new FormData(); fd.append('file',this.importFile);
+      const r=await fetch('/api/import/preview/',{method:'POST',body:fd});
+      const d=await r.json();
+      if(d.error){alert(d.error);this.importing=false;return;}
+      this.importSheets=d.sheets; this.importSelectedSheet=Object.keys(d.sheets)[0];
+      this.importSheetChanged(); this.importStep=2; this.importing=false;
+    },
+
+    importSheetChanged(){
+      const s=this.importSheets[this.importSelectedSheet];
+      if(!s) return;
+      this.importMapping={...s.mapping}; this.importPreviewRows=s.preview;
+    },
+
+    async doImportConfirm(){
+      this.importing=true;
+      const fd=new FormData(); fd.append('file',this.importFile);
+      fd.append('mapping',JSON.stringify(this.importMapping));
+      fd.append('sheet',this.importSelectedSheet);
+      const r=await fetch('/api/import/confirm/',{method:'POST',body:fd});
+      this.importResult=await r.json(); this.importStep=3; this.importing=false;
       await this.loadStats();
     },
 
-    openAddPerson() {
-      this.editingPerson = {name: '', death_date: '', attrList: []};
-      this.showPersonModal = true;
+    // ── Calculate ──────────────────────────────────────
+    async doCalculate(){
+      this.calculating=true; this.calcError=''; this.calcResults=null;
+      const body={year:this.calcYear};
+      if(this.calcScope==='all') body.all=true; else body.person_ids=this.selectedPeople;
+      const r=await fetch('/api/calculate/',{method:'POST',
+        headers:{...csrfH(),'Content-Type':'application/json'},body:JSON.stringify(body)});
+      const d=await r.json();
+      if(d.error){this.calcError=d.error;this.calculating=false;return;}
+      this.calcResults=d;
+      this.selectedFields=d.available_fields.filter(f=>f!=='年忌名');
+      this.calculating=false;
     },
 
-    openEditPerson(p) {
-      const skip = new Set(['id', 'name', 'death_date']);
-      this.editingPerson = {
-        id: p.id, name: p.name, death_date: p.death_date,
-        attrList: Object.entries(p).filter(([k]) => !skip.has(k)).map(([k,v]) => ({key:k, value:v}))
-      };
-      this.showPersonModal = true;
-    },
-
-    async savePerson() {
-      const body = {
-        name: this.editingPerson.name,
-        death_date: this.editingPerson.death_date,
-        attributes: Object.fromEntries(this.editingPerson.attrList.filter(a => a.key).map(a => [a.key, a.value]))
-      };
-      const headers = {...getCsrfHeaders(), 'Content-Type': 'application/json'};
-      if (this.editingPerson.id) {
-        await fetch(`/api/people/${this.editingPerson.id}/`, {method: 'PUT', headers, body: JSON.stringify(body)});
-      } else {
-        await fetch('/api/people/', {method: 'POST', headers, body: JSON.stringify(body)});
-      }
-      this.showPersonModal = false;
-      await this.loadPeople();
-      await this.loadStats();
-    },
-
-    // ── Import ──
-    importFileSelected(e) {
-      this.importFile = e.target.files[0];
-    },
-
-    async doImportPreview() {
-      if (!this.importFile) return;
-      this.importing = true;
-      const fd = new FormData();
-      fd.append('file', this.importFile);
-      const r = await fetch('/api/import/preview/', {method: 'POST', body: fd});
-      const d = await r.json();
-      if (d.error) { alert(d.error); this.importing = false; return; }
-      this.importSheets = d.sheets;
-      this.importSelectedSheet = Object.keys(d.sheets)[0];
-      this.importSheetChanged();
-      this.importStep = 2;
-      this.importing = false;
-    },
-
-    importSheetChanged() {
-      const s = this.importSheets[this.importSelectedSheet];
-      if (!s) return;
-      this.importMapping = {...s.mapping};
-      this.importPreviewRows = s.preview;
-    },
-
-    async doImportConfirm() {
-      this.importing = true;
-      const fd = new FormData();
-      fd.append('file', this.importFile);
-      fd.append('mapping', JSON.stringify(this.importMapping));
-      fd.append('sheet', this.importSelectedSheet);
-      const r = await fetch('/api/import/confirm/', {method: 'POST', body: fd});
-      const d = await r.json();
-      this.importResult = d;
-      this.importStep = 3;
-      this.importing = false;
-      await this.loadStats();
-    },
-
-    // ── Calculate ──
-    goCalculateSelected() {
-      this.calcScope = 'selected';
-      this.activeTab = 'calculate';
-    },
-
-    async doCalculate() {
-      this.calculating = true;
-      this.calcError = '';
-      this.calcResults = null;
-      const body = {year: this.calcYear};
-      if (this.calcScope === 'all') {
-        body.all = true;
-      } else {
-        body.person_ids = this.selectedPeople;
-      }
-      const r = await fetch('/api/calculate/', {
-        method: 'POST',
-        headers: {...getCsrfHeaders(), 'Content-Type': 'application/json'},
-        body: JSON.stringify(body)
-      });
-      const d = await r.json();
-      if (d.error) { this.calcError = d.error; this.calculating = false; return; }
-      this.calcResults = d;
-      // Auto-select all fields
-      this.selectedFields = d.available_fields.filter(f => f !== '年忌名');
-      this.calculating = false;
-    },
-
-    goEditor() {
-      this.activeTab = 'editor';
-    },
-
-    // ── Editor ──
-    widgetLabel(type) {
-      const wt = this.widgetTypes.find(w => w.type === type);
-      return wt ? wt.icon + ' ' + wt.label : type;
-    },
-
-    selectWidget(w) {
-      this.selectedWidget = w;
-    },
-
-    removeWidget(idx) {
-      if (this.selectedWidget && this.canvasWidgets[idx] === this.selectedWidget) {
-        this.selectedWidget = null;
-      }
-      this.canvasWidgets.splice(idx, 1);
-    },
-
-    removeSelectedWidget() {
-      const idx = this.canvasWidgets.indexOf(this.selectedWidget);
-      if (idx >= 0) { this.canvasWidgets.splice(idx, 1); }
-      this.selectedWidget = null;
-    },
-
-    syncWidgets() {
-      // Alpine reactivity handles this; method exists for explicit triggers
-    },
-
-    dragPaletteStart(e, type) {
-      e.dataTransfer.setData('widget-type', type);
-    },
-
-    dropOnCanvas(e) {
-      const type = e.dataTransfer.getData('widget-type');
-      if (!type) return;
-      this.canvasWidgets.push(this.makeWidget(type));
-      this.$nextTick(() => this.initSortable());
-    },
-
-    makeWidget(type) {
-      const defaults = {
-        title:        {font_size: 36, bold: true,  align: 'center'},
-        group_header: {font_size: 28, bold: true,  align: 'center', template: '{nenki_name}　{anniversary_date}'},
-        entry:        {font_size: 18, bold: false, align: 'left', padding: true},
-        spacer:       {lines: 1},
-        page_break:   {},
-      };
-      return {id: uid(), type, ...(defaults[type] || {})};
-    },
-
-    sampleEntry(w) {
-      const fields = this.selectedFields.filter(f => f !== '年忌名');
-      if (!fields.length) return '（フィールドを選択してください）';
-      const sample = {
-        name: '山田　太郎', death_date_kanji: '令和元年五月十日',
-        anniversary_date_kanji: '令和八年五月十日', '法名': '○○院△△居士'
-      };
-      return fields.map(f => sample[f] || f).join(this.layout.field_separator || '　');
-    },
-
-    // ── Generate ──
-    buildPayload() {
-      const widgets = this.canvasWidgets.map(w => {
-        const out = {type: w.type};
-        if (w.font_size) out.font_size = w.font_size;
-        if (w.bold !== undefined) out.bold = w.bold;
-        if (w.align) out.align = w.align;
-        if (w.template) out.template = w.template;
-        if (w.lines) out.lines = w.lines;
-        if (w.padding !== undefined) out.padding = w.padding;
-        return out;
-      });
+    // ── Generate ───────────────────────────────────────
+    buildPayload(){
+      // Sort widgets: tategaki→x descending (right=first), yokogumi→y ascending (top=first)
+      const isT=this.layout.text_direction==='tategaki';
+      const sorted=[...this.canvasWidgets].sort((a,b)=>
+        isT ? (b.x+b.w/2)-(a.x+a.w/2) : (a.y+a.h/2)-(b.y+b.h/2)
+      );
       return {
-        layout: {...this.layout, widgets},
-        groups: this.calcResults && this.calcResults.groups || [],
+        layout:{...this.layout, widgets: sorted.map(w=>({
+          type:w.type, font_size:w.fontSize||14, bold:!!w.bold,
+          align:w.align||'left', template:w.template, lines:w.lines||1, padding:!!w.padding,
+        }))},
+        groups: this.calcResults?.groups||[],
         selected_fields: this.selectedFields,
       };
     },
 
-    async doGenerateWord() {
-      this.generating = true; this.genError = '';
-      try {
-        const r = await fetch('/api/generate/word/', {
-          method: 'POST',
-          headers: {...getCsrfHeaders(), 'Content-Type': 'application/json'},
-          body: JSON.stringify(this.buildPayload())
-        });
-        if (!r.ok) { this.genError = 'エラーが発生しました'; return; }
-        const blob = await r.blob();
-        downloadBlob(blob, 'nenki.docx');
-      } catch(e) { this.genError = e.message; }
-      finally { this.generating = false; }
+    async doGenerateWord(){
+      this.generating=true; this.genError='';
+      try{
+        const r=await fetch('/api/generate/word/',{method:'POST',
+          headers:{...csrfH(),'Content-Type':'application/json'},
+          body:JSON.stringify(this.buildPayload())});
+        if(!r.ok){this.genError='エラーが発生しました';return;}
+        dlBlob(await r.blob(),'nenki.docx');
+      }catch(e){this.genError=e.message;}
+      finally{this.generating=false;}
     },
 
-    async doGeneratePDF() {
-      this.generating = true; this.genError = '';
-      try {
-        const r = await fetch('/api/generate/pdf/', {
-          method: 'POST',
-          headers: {...getCsrfHeaders(), 'Content-Type': 'application/json'},
-          body: JSON.stringify(this.buildPayload())
-        });
-        if (!r.ok) { this.genError = 'エラーが発生しました'; return; }
-        const blob = await r.blob();
-        downloadBlob(blob, 'nenki.pdf');
-      } catch(e) { this.genError = e.message; }
-      finally { this.generating = false; }
+    async doGeneratePDF(){
+      this.generating=true; this.genError='';
+      try{
+        const r=await fetch('/api/generate/pdf/',{method:'POST',
+          headers:{...csrfH(),'Content-Type':'application/json'},
+          body:JSON.stringify(this.buildPayload())});
+        if(!r.ok){this.genError='エラーが発生しました';return;}
+        dlBlob(await r.blob(),'nenki.pdf');
+      }catch(e){this.genError=e.message;}
+      finally{this.generating=false;}
     },
 
-    doPrint() {
-      const payload = this.buildPayload();
-      const groups = payload.groups || [];
-      const fields = payload.selected_fields.filter(f => f !== '年忌名');
-      const sep = this.layout.field_separator || '　';
-      const titleWidget = this.canvasWidgets.find(w => w.type === 'title');
-      const headerWidget = this.canvasWidgets.find(w => w.type === 'group_header');
-      const entryWidget = this.canvasWidgets.find(w => w.type === 'entry');
-
-      let html = `<div class="print-page" style="font-family:${this.layout.font_family || 'serif'}">`;
-      html += `<h1 style="text-align:center; font-size:${titleWidget ? titleWidget.font_size : 24}px">${this.layout.title}</h1>`;
-      for (const g of groups) {
-        if (!g.entries.length) continue;
-        const tmpl = (headerWidget && headerWidget.template) || '{nenki_name}　{anniversary_date}';
-        const hdr = tmpl.replace('{nenki_name}', g.entries[0]['年忌名'] || g.nenki_name)
-                        .replace('{anniversary_date}', g.entries[0].anniversary_date_kanji || '');
-        html += `<h2 style="font-size:${headerWidget ? headerWidget.font_size : 18}px">${hdr}</h2>`;
-        for (const e of g.entries) {
-          const row = fields.map(f => e[f] || '').join(sep);
-          html += `<div style="font-size:${entryWidget ? entryWidget.font_size : 12}px">${row}</div>`;
+    doPrint(){
+      const p=this.buildPayload();
+      const groups=p.groups, fields=p.selected_fields.filter(f=>f!=='年忌名');
+      const sep=this.layout.field_separator||'　';
+      const tw=p.layout.widgets.find(w=>w.type==='title');
+      const hw=p.layout.widgets.find(w=>w.type==='group_header');
+      const ew=p.layout.widgets.find(w=>w.type==='entry');
+      let html=`<div class="pp" style="font-family:${this.layout.font_family||'serif'}">`;
+      html+=`<h1 style="text-align:center;font-size:${tw?.font_size||24}px;margin-bottom:16px">${this.layout.title}</h1>`;
+      for(const g of groups){
+        if(!g.entries.length) continue;
+        const tmpl=(hw?.template||'{nenki_name}　{anniversary_date}')
+          .replace('{nenki_name}',g.entries[0]['年忌名']||g.nenki_name)
+          .replace('{anniversary_date}',g.entries[0].anniversary_date_kanji||'');
+        html+=`<h2 style="font-size:${hw?.font_size||18}px;margin:10px 0 6px">${tmpl}</h2>`;
+        for(const e of g.entries){
+          html+=`<div style="font-size:${ew?.font_size||12}px">${fields.map(f=>e[f]||'').join(sep)}</div>`;
         }
-        html += '<br>';
+        html+='<br>';
       }
-      html += '</div>';
-
-      const printArea = document.getElementById('print-content');
-      printArea.innerHTML = html;
-      document.getElementById('print-area').style.display = 'block';
+      html+='</div>';
+      document.getElementById('print-content').innerHTML=html;
+      document.getElementById('print-area').style.display='block';
       window.print();
-      document.getElementById('print-area').style.display = 'none';
-      printArea.innerHTML = '';
+      document.getElementById('print-area').style.display='none';
+      document.getElementById('print-content').innerHTML='';
     },
   };
-}
-
-// Utilities
-let _uidCounter = 0;
-function uid() { return 'w' + (++_uidCounter) + '_' + Math.random().toString(36).slice(2,6); }
-
-function getCsrfHeaders() {
-  const cookie = document.cookie.split(';').find(c => c.trim().startsWith('csrftoken='));
-  const token = cookie ? cookie.split('=')[1].trim() : '';
-  return {'X-CSRFToken': token};
-}
-
-function downloadBlob(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename; a.click();
-  URL.revokeObjectURL(url);
 }
 </script>
 </body>
