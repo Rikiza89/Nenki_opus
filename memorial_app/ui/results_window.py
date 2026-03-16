@@ -260,8 +260,8 @@ class ResultsPage(QWidget):
 
         groups = defaultdict(list)
         for ann, name, attrs, pid in filtered:
-            death_year_era = format_date_kanji_era(ann.death_date)
-            key = f"{ann.name}|{ann.years_offset}|（{death_year_era}没）"
+            # Group by nenki name only so all people with same 回忌 are merged
+            key = f"{ann.name}|{ann.years_offset}"
             # Build ordered field values for this person
             entry = []
             for field in entry_fields:
