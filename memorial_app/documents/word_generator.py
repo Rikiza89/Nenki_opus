@@ -112,7 +112,7 @@ class WordGenerator:
                 # Subtitle centered on page
                 subtitle = doc.add_paragraph()
                 subtitle_run = subtitle.add_run(nenki_name)
-                subtitle_run.font.size = Pt(20)
+                subtitle_run.font.size = Pt(28)
                 subtitle_run.font.bold = True
                 subtitle_run.font.name = self.FONT_NAME
                 subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -167,10 +167,10 @@ class WordGenerator:
 
             para = doc.add_paragraph()
             run = para.add_run(text)
-            run.font.size = Pt(14)
+            run.font.size = Pt(18)
             run.font.name = self.FONT_NAME
             para.paragraph_format.left_indent = Inches(1.5)
-            para.paragraph_format.space_after = Pt(6)
+            para.paragraph_format.space_after = Pt(8)
 
     def _build_dual_column_group(
         self, doc: Document, nenki_name: str, people_data: list,
