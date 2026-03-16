@@ -219,7 +219,7 @@ class WordGenerator:
             borders.append(el)
         tblPr.append(borders)
 
-        # Set column widths
+        # Set column widths and tategaki text direction on each cell
         for col_idx in range(2):
             cell = table.cell(0, col_idx)
             tc = cell._tc
@@ -228,6 +228,10 @@ class WordGenerator:
             tcW.set(qn("w:w"), str(col_width_twips))
             tcW.set(qn("w:type"), "dxa")
             tcPr.append(tcW)
+            # Set vertical text direction (tategaki) on the cell
+            textDir = OxmlElement("w:textDirection")
+            textDir.set(qn("w:val"), "tbRl")
+            tcPr.append(textDir)
 
         # Fill column 1
         self._fill_table_cell(table.cell(0, 0), col1_groups, field_widths)
