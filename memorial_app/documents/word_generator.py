@@ -63,7 +63,6 @@ class WordGenerator:
         """
         doc = Document()
 
-        # -- First section: title only --
         section = doc.sections[0]
         self._setup_section(section)
 
@@ -85,14 +84,9 @@ class WordGenerator:
         title_run.font.name = self.FONT_NAME
         title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        doc.add_paragraph()
-
         if not single_column:
-            # Add continuous section break and set 2 columns for content
-            new_section = doc.add_section(2)  # 2 = continuous break
-            self._setup_section(new_section)
-            # Set 2 columns
-            sectPr = new_section._sectPr
+            # Set 2 columns on the same section (no section break)
+            sectPr = section._sectPr
             cols = OxmlElement("w:cols")
             cols.set(qn("w:num"), "2")
             cols.set(qn("w:space"), "720")  # space between columns in twips
