@@ -23,7 +23,7 @@ cd Nenki_opus/memorial_django
 ### 2. Install dependencies
 
 ```bash
-pip install django python-docx reportlab pandas openpyxl
+pip install -r requirements.txt
 ```
 
 | Package | Version | Purpose |
@@ -38,7 +38,7 @@ pip install django python-docx reportlab pandas openpyxl
 > ```bash
 > python -m venv venv
 > source venv/bin/activate   # Windows: venv\Scripts\activate
-> pip install django python-docx reportlab pandas openpyxl
+> pip install -r requirements.txt
 > ```
 
 ### 3. Initialize the database
@@ -67,6 +67,7 @@ Nenki_opus/
 │   └── ...
 └── memorial_django/             ← Django web app (this app)
     ├── manage.py
+    ├── requirements.txt
     ├── memorial_web.db          ← SQLite database (auto-created)
     ├── nenki_web/               ← Django project config
     │   ├── settings.py
