@@ -77,13 +77,11 @@ class WordGenerator:
 
         # Each nenki group
         for key, people_data in sorted_data:
-            parts = key.split("|")
-            nenki_name = parts[0]
-            death_year = parts[2]
+            nenki_name = key.split("|")[0]
 
             # Nenki subtitle
             subtitle = doc.add_paragraph()
-            subtitle_run = subtitle.add_run(f"{nenki_name}{death_year}")
+            subtitle_run = subtitle.add_run(nenki_name)
             subtitle_run.font.size = Pt(20) if single_column else Pt(16)
             subtitle_run.font.bold = True
             subtitle_run.font.name = self.FONT_NAME

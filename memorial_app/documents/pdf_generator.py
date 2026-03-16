@@ -125,8 +125,8 @@ class PdfGenerator:
         elements.append(Spacer(1, 6 * mm))
 
         for key, entries in sorted_data:
-            nenki_name, _, death_info = key.split("|", 2)
-            header_text = f"{nenki_name}　{death_info}"
+            nenki_name = key.split("|")[0]
+            header_text = nenki_name
             elements.append(Paragraph(header_text, section_style))
 
             # Header row
