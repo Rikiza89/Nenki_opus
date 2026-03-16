@@ -10,10 +10,15 @@ from pathlib import Path
 import unicodedata
 
 from docx import Document
-from docx.shared import Pt, Inches
+from docx.shared import Pt, Inches, Emu
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.oxml.ns import qn
+from docx.oxml.ns import qn, nsmap
 from docx.oxml import OxmlElement
+
+# Register extra namespaces needed for text boxes
+nsmap['wps'] = 'http://schemas.microsoft.com/office/word/2010/wordprocessingShape'
+nsmap['wp14'] = 'http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing'
+nsmap['mc'] = 'http://schemas.openxmlformats.org/markup-compatibility/2006'
 
 
 def _display_width(text: str) -> int:
@@ -83,7 +88,6 @@ class WordGenerator:
         field_widths = self._compute_field_widths(all_entries, field_names)
 
         if single_column:
-            # Single column: title + data, no columns
             self._add_title(doc, title)
             self._build_single_column_content(doc, sorted_data, field_names, field_widths)
         else:
@@ -94,8 +98,11 @@ class WordGenerator:
             cols.set(qn("w:space"), "720")
             sectPr.append(cols)
 
-            # Build: title_part1 → col1 data → col break → title_part2 → col2 data
-            self._build_dual_column_content(doc, title, sorted_data, field_widths)
+            # Floating text box for title — independent of column layout
+            self._add_textbox_title(doc, title)
+
+            # Data flows naturally into 2 columns
+            self._build_dual_column_content(doc, sorted_data, field_widths)
 
         doc.save(str(output_path))
 
@@ -112,31 +119,174 @@ class WordGenerator:
         title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
         title_para.paragraph_format.space_after = Pt(4)
 
-    def _split_title(self, title: str) -> tuple[str, str]:
-        """Split title into two parts for dual-column display."""
-        if " - " in title:
-            return title.split(" - ", 1)
-        if "\u3000" in title:
-            idx = title.index("\u3000")
-            return title[:idx], title[idx + 1:]
-        mid = len(title) // 2
-        return title[:mid], title[mid:]
+    def _add_textbox_title(self, doc: Document, title: str):
+        """Add title as a floating tategaki text box spanning full page width.
 
-    def _split_groups(self, sorted_data: list) -> tuple[list, list]:
-        """Split nenki groups into two halves by entry count, keeping groups intact."""
-        group_sizes = [len(people_data) + 1 for _, people_data in sorted_data]
-        total = sum(group_sizes)
-        half = total / 2
+        The text box is anchored at the top of the margin area with
+        'top and bottom' wrapping so the 2-column data flows below it.
+        """
+        para = doc.add_paragraph()
+        run = para.add_run()
 
-        running = 0
-        split_idx = len(sorted_data)
-        for i, size in enumerate(group_sizes):
-            running += size
-            if running >= half:
-                split_idx = i + 1
-                break
+        # --- Build the DrawingML anchor with a WordprocessingShape text box ---
 
-        return sorted_data[:split_idx], sorted_data[split_idx:]
+        # Usable dimensions (page minus margins)
+        # Landscape A4: 11.69" x 8.27", margins 0.5" each side
+        usable_w = int(10.69 * 914400)  # EMU (width in landscape = physical width - margins)
+        title_h = int(0.75 * 914400)     # EMU — text box height (~0.75 inch)
+
+        drawing = OxmlElement('w:drawing')
+
+        # wp:anchor — floating positioning
+        anchor = OxmlElement('wp:anchor')
+        for attr, val in [
+            ('distT', '0'), ('distB', '0'), ('distL', '0'), ('distR', '0'),
+            ('simplePos', '0'), ('relativeHeight', '251659264'),
+            ('behindDoc', '0'), ('locked', '0'),
+            ('layoutInCell', '1'), ('allowOverlap', '1'),
+        ]:
+            anchor.set(attr, val)
+
+        # Simple position (required but unused)
+        simplePos = OxmlElement('wp:simplePos')
+        simplePos.set('x', '0')
+        simplePos.set('y', '0')
+        anchor.append(simplePos)
+
+        # Horizontal: centered relative to margin
+        posH = OxmlElement('wp:positionH')
+        posH.set('relativeFrom', 'margin')
+        align_h = OxmlElement('wp:align')
+        align_h.text = 'center'
+        posH.append(align_h)
+        anchor.append(posH)
+
+        # Vertical: top of margin
+        posV = OxmlElement('wp:positionV')
+        posV.set('relativeFrom', 'margin')
+        offset_v = OxmlElement('wp:posOffset')
+        offset_v.text = '0'
+        posV.append(offset_v)
+        anchor.append(posV)
+
+        # Extent (size)
+        extent = OxmlElement('wp:extent')
+        extent.set('cx', str(usable_w))
+        extent.set('cy', str(title_h))
+        anchor.append(extent)
+
+        # Effect extent
+        effectExtent = OxmlElement('wp:effectExtent')
+        for attr in ('l', 't', 'r', 'b'):
+            effectExtent.set(attr, '0')
+        anchor.append(effectExtent)
+
+        # Wrap: top and bottom — columns flow below the text box
+        anchor.append(OxmlElement('wp:wrapTopAndBottom'))
+
+        # Document properties
+        docPr = OxmlElement('wp:docPr')
+        docPr.set('id', '1')
+        docPr.set('name', 'Title Text Box')
+        anchor.append(docPr)
+
+        # Graphic frame
+        graphic = OxmlElement('a:graphic')
+        graphicData = OxmlElement('a:graphicData')
+        graphicData.set('uri', 'http://schemas.microsoft.com/office/word/2010/wordprocessingShape')
+        graphic.append(graphicData)
+
+        # Word processing shape
+        wsp = OxmlElement('wps:wsp')
+
+        # Shape properties — non-visual
+        cNvSpPr = OxmlElement('wps:cNvSpPr')
+        cNvSpPr.set('txBox', '1')
+        wsp.append(cNvSpPr)
+
+        # Shape properties — geometry, no fill, no border
+        spPr = OxmlElement('wps:spPr')
+
+        xfrm = OxmlElement('a:xfrm')
+        off = OxmlElement('a:off')
+        off.set('x', '0')
+        off.set('y', '0')
+        xfrm.append(off)
+        ext = OxmlElement('a:ext')
+        ext.set('cx', str(usable_w))
+        ext.set('cy', str(title_h))
+        xfrm.append(ext)
+        spPr.append(xfrm)
+
+        prstGeom = OxmlElement('a:prstGeom')
+        prstGeom.set('prst', 'rect')
+        prstGeom.append(OxmlElement('a:avLst'))
+        spPr.append(prstGeom)
+
+        spPr.append(OxmlElement('a:noFill'))
+
+        ln = OxmlElement('a:ln')
+        ln.append(OxmlElement('a:noFill'))
+        spPr.append(ln)
+
+        wsp.append(spPr)
+
+        # Text box content
+        txbx = OxmlElement('wps:txbx')
+        txbxContent = OxmlElement('w:txbxContent')
+
+        # Title paragraph inside text box
+        tp = OxmlElement('w:p')
+        tpPr = OxmlElement('w:pPr')
+        jc = OxmlElement('w:jc')
+        jc.set(qn('w:val'), 'center')
+        tpPr.append(jc)
+        tp.append(tpPr)
+
+        tr = OxmlElement('w:r')
+        trPr = OxmlElement('w:rPr')
+        # Bold
+        trPr.append(OxmlElement('w:b'))
+        # Font size: 36pt = 72 half-points
+        sz = OxmlElement('w:sz')
+        sz.set(qn('w:val'), '72')
+        trPr.append(sz)
+        szCs = OxmlElement('w:szCs')
+        szCs.set(qn('w:val'), '72')
+        trPr.append(szCs)
+        # Font name
+        rFonts = OxmlElement('w:rFonts')
+        rFonts.set(qn('w:ascii'), self.FONT_NAME)
+        rFonts.set(qn('w:eastAsia'), self.FONT_NAME)
+        rFonts.set(qn('w:hAnsi'), self.FONT_NAME)
+        trPr.append(rFonts)
+        tr.append(trPr)
+
+        tt = OxmlElement('w:t')
+        tt.set(qn('xml:space'), 'preserve')
+        tt.text = title
+        tr.append(tt)
+        tp.append(tr)
+
+        txbxContent.append(tp)
+        txbx.append(txbxContent)
+        wsp.append(txbx)
+
+        # Body properties — tategaki vertical text, centered anchor
+        bodyPr = OxmlElement('wps:bodyPr')
+        bodyPr.set('vert', 'eaVert')
+        bodyPr.set('wrap', 'square')
+        bodyPr.set('lIns', '91440')
+        bodyPr.set('tIns', '45720')
+        bodyPr.set('rIns', '91440')
+        bodyPr.set('bIns', '45720')
+        bodyPr.set('anchor', 'ctr')
+        wsp.append(bodyPr)
+
+        graphicData.append(wsp)
+        anchor.append(graphic)
+        drawing.append(anchor)
+        run._element.append(drawing)
 
     def _setup_section(self, section):
         """Configure a section with landscape A4, tategaki, and margins."""
@@ -208,20 +358,11 @@ class WordGenerator:
             # Space between groups
             doc.add_paragraph()
 
-    def _add_column_title(self, doc: Document, text: str):
-        """Add a title paragraph for one column in dual-column mode."""
-        para = doc.add_paragraph()
-        run = para.add_run(text)
-        run.font.size = Pt(36)
-        run.font.bold = True
-        run.font.name = self.FONT_NAME
-        para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        para.paragraph_format.space_after = Pt(4)
-        return para
-
-    def _add_column_groups(self, doc: Document, groups: list, field_widths: list[int]):
-        """Add nenki groups (subtitle + entries) for one column."""
-        for key, people_data in groups:
+    def _build_dual_column_content(
+        self, doc: Document, sorted_data: list, field_widths: list[int],
+    ):
+        """Dual column layout: data flows into Word's native 2 columns."""
+        for key, people_data in sorted_data:
             nenki_name = key.split("|")[0]
 
             subtitle = doc.add_paragraph()
@@ -243,33 +384,6 @@ class WordGenerator:
 
             # Space between groups
             doc.add_paragraph()
-
-    def _add_column_break(self, doc: Document):
-        """Insert a column break at the end of the last paragraph."""
-        # Add column break to the last paragraph
-        last_para = doc.paragraphs[-1]
-        run = last_para.add_run()
-        br = OxmlElement("w:br")
-        br.set(qn("w:type"), "column")
-        run._element.append(br)
-
-    def _build_dual_column_content(
-        self, doc: Document, title: str, sorted_data: list, field_widths: list[int],
-    ):
-        """Dual column layout: title_part1 → col1 data → break → title_part2 → col2 data."""
-        title_part1, title_part2 = self._split_title(title)
-        col1_groups, col2_groups = self._split_groups(sorted_data)
-
-        # Column 1: title part 1 + data
-        self._add_column_title(doc, title_part1)
-        self._add_column_groups(doc, col1_groups, field_widths)
-
-        # Column break to move to column 2
-        self._add_column_break(doc)
-
-        # Column 2: title part 2 + data
-        self._add_column_title(doc, title_part2)
-        self._add_column_groups(doc, col2_groups, field_widths)
 
     def _convert_to_pdf(self, docx_path: Path):
         """Try to convert .docx to .pdf using docx2pdf."""
