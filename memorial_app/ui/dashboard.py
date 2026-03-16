@@ -63,6 +63,16 @@ class DashboardPage(QWidget):
         self.upcoming_list.setWordWrap(True)
         layout.addWidget(self.upcoming_list)
 
+        # Sample data hint
+        self.sample_hint = QLabel("")
+        self.sample_hint.setWordWrap(True)
+        self.sample_hint.setStyleSheet(
+            "color: #3498db; font-size: 12px; padding: 12px; "
+            "background: #eaf2f8; border-radius: 4px; margin-top: 8px;"
+        )
+        self.sample_hint.setVisible(False)
+        layout.addWidget(self.sample_hint)
+
         layout.addStretch()
 
     def refresh(self):
@@ -106,3 +116,19 @@ class DashboardPage(QWidget):
             self.upcoming_list.setText("\n".join(lines))
         else:
             self.upcoming_list.setText("直近の年忌予定はありません")
+
+        # Show sample data hint when database is empty
+        if total == 0:
+            from pathlib import Path
+            sample_path = Path.home() / ".nenki_app" / "example_dataset.xlsx"
+            if sample_path.exists():
+                self.sample_hint.setText(
+                    f"サンプルデータが利用可能です。\n"
+                    f"「データインポート」ページで以下のファイルを読み込んでください:\n"
+                    f"{sample_path}"
+                )
+                self.sample_hint.setVisible(True)
+            else:
+                self.sample_hint.setVisible(False)
+        else:
+            self.sample_hint.setVisible(False)

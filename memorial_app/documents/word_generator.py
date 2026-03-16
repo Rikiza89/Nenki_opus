@@ -1,23 +1,23 @@
 """Word document generator for nenki anniversary tables.
 
-Generates .docx files with Japanese formatting using python-docx.
-Supports single and dual column layouts with vertical section headers.
+Generates .docx files with vertical Japanese text (縦書き / tategaki),
+landscape A4 orientation, and proper Japanese formatting.
+Optionally converts to PDF via docx2pdf.
 """
 
 from pathlib import Path
 
 from docx import Document
-from docx.shared import Pt, Cm, RGBColor
+from docx.shared import Pt, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
 
 
 class WordGenerator:
-    """Generate Word documents for nenki anniversary listings."""
+    """Generate Word documents for nenki anniversary listings with vertical text."""
 
-    FONT_NAME = "游明朝"
-    FALLBACK_FONT = "MS 明朝"
+    FONT_NAME = "MS Mincho"
 
     def create_combined_document(
         self,
@@ -26,7 +26,7 @@ class WordGenerator:
         output_path: Path,
         single_column: bool = True,
     ):
-        """Create a combined nenki document.
+        """Create a combined nenki document with vertical Japanese text.
 
         Args:
             sorted_data: List of (key, entries) from ResultsPage._get_sorted_data().
@@ -38,33 +38,24 @@ class WordGenerator:
         """
         doc = Document()
 
-        self._setup_styles(doc)
-        self._set_page_margins(doc)
+        # Landscape A4
+        section = doc.sections[0]
+        section.page_width = Inches(11.69)
+        section.page_height = Inches(8.27)
+        section.top_margin = Inches(0.5)
+        section.bottom_margin = Inches(0.5)
+        section.left_margin = Inches(0.5)
+        section.right_margin = Inches(0.5)
 
-        # Title
-        p = doc.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        run = p.add_run(title)
-        run.font.size = Pt(18)
-        run.font.bold = True
-        self._set_font(run)
+        # Set vertical text direction (tategaki)
+        sectPr = section._sectPr
+        textDirection = OxmlElement("w:textDirection")
+        textDirection.set(qn("w:val"), "tbRl")
+        sectPr.append(textDirection)
 
-        doc.add_paragraph()  # spacer
-
-        if single_column:
-            self._build_single_column(doc, sorted_data)
-        else:
-            self._build_dual_column(doc, sorted_data)
-
-        doc.save(str(output_path))
-
-    def _setup_styles(self, doc: Document):
-        """Configure default document styles for Japanese text."""
+        # Set default font
         style = doc.styles["Normal"]
-        font = style.font
-        font.size = Pt(10.5)
-        font.name = self.FONT_NAME
-        # Set East Asian font
+        style.font.name = self.FONT_NAME
         rPr = style.element.get_or_add_rPr()
         rFonts = rPr.find(qn("w:rFonts"))
         if rFonts is None:
@@ -72,146 +63,120 @@ class WordGenerator:
             rPr.insert(0, rFonts)
         rFonts.set(qn("w:eastAsia"), self.FONT_NAME)
 
-    def _set_page_margins(self, doc: Document):
-        """Set A4 page with comfortable margins."""
-        section = doc.sections[0]
-        section.page_width = Cm(21.0)
-        section.page_height = Cm(29.7)
-        section.top_margin = Cm(2.0)
-        section.bottom_margin = Cm(2.0)
-        section.left_margin = Cm(2.5)
-        section.right_margin = Cm(2.5)
+        # Main title
+        title_para = doc.add_paragraph()
+        title_run = title_para.add_run(title)
+        title_run.font.size = Pt(36)
+        title_run.font.bold = True
+        title_run.font.name = self.FONT_NAME
+        title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-    def _set_font(self, run):
-        """Apply Japanese font to a run."""
-        run.font.name = self.FONT_NAME
-        rPr = run._element.get_or_add_rPr()
-        rFonts = rPr.find(qn("w:rFonts"))
-        if rFonts is None:
-            rFonts = rPr.makeelement(qn("w:rFonts"), {})
-            rPr.insert(0, rFonts)
-        rFonts.set(qn("w:eastAsia"), self.FONT_NAME)
+        doc.add_paragraph()
 
-    def _build_single_column(self, doc: Document, sorted_data: list):
-        """Build single-column layout with tables per nenki group."""
-        for key, entries in sorted_data:
-            nenki_name, _, death_info = key.split("|", 2)
+        # Each nenki group
+        for key, people_data in sorted_data:
+            parts = key.split("|")
+            nenki_name = parts[0]
+            death_year = parts[2]
 
-            # Section header
-            p = doc.add_paragraph()
-            run = p.add_run(f"■ {nenki_name}　{death_info}")
-            run.font.size = Pt(12)
-            run.font.bold = True
-            run.font.color.rgb = RGBColor(0x2C, 0x3E, 0x50)
-            self._set_font(run)
+            # Nenki subtitle
+            subtitle = doc.add_paragraph()
+            subtitle_run = subtitle.add_run(f"{nenki_name}{death_year}")
+            subtitle_run.font.size = Pt(20) if single_column else Pt(16)
+            subtitle_run.font.bold = True
+            subtitle_run.font.name = self.FONT_NAME
 
-            # Table
-            table = doc.add_table(rows=1, cols=3)
-            table.style = "Table Grid"
-            table.alignment = WD_TABLE_ALIGNMENT.CENTER
+            if not single_column:
+                subtitle.paragraph_format.left_indent = Inches(0.5)
+            else:
+                subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-            # Header row
-            hdr = table.rows[0]
-            for cell, text in zip(hdr.cells, ["氏名", "法名", "法要日"]):
-                cell.text = text
-                self._style_header_cell(cell)
+            subtitle.paragraph_format.space_after = Pt(12)
 
-            # Data rows
-            for name, display_name, date_str in entries:
-                row = table.add_row()
-                row.cells[0].text = name
-                row.cells[1].text = display_name if display_name != name else ""
-                row.cells[2].text = date_str
-                for cell in row.cells:
-                    self._style_data_cell(cell)
+            if single_column:
+                self._build_single_column_group(doc, people_data)
+            else:
+                self._build_dual_column_group(doc, people_data)
 
-            doc.add_paragraph()  # spacer between groups
-
-    def _build_dual_column(self, doc: Document, sorted_data: list):
-        """Build dual-column layout: two nenki groups side by side."""
-        # Process in pairs
-        for i in range(0, len(sorted_data), 2):
-            left = sorted_data[i]
-            right = sorted_data[i + 1] if i + 1 < len(sorted_data) else None
-
-            # Create a 2-column table as layout container
-            cols = 2 if right else 1
-            outer = doc.add_table(rows=1, cols=cols)
-            outer.alignment = WD_TABLE_ALIGNMENT.CENTER
-
-            # Remove borders from outer layout table
-            for row in outer.rows:
-                for cell in row.cells:
-                    self._remove_borders(cell)
-
-            # Left group
-            self._fill_group_cell(outer.rows[0].cells[0], left)
-
-            # Right group
-            if right:
-                self._fill_group_cell(outer.rows[0].cells[1], right)
-
+            # Space between groups
             doc.add_paragraph()
 
-    def _fill_group_cell(self, cell, group_data):
-        """Fill a layout cell with one nenki group's data."""
-        key, entries = group_data
-        nenki_name, _, death_info = key.split("|", 2)
+        doc.save(str(output_path))
 
-        # Header
-        p = cell.paragraphs[0]
-        p.clear()
-        run = p.add_run(f"■ {nenki_name}　{death_info}")
+        # Auto-convert to PDF
+        self._convert_to_pdf(output_path)
+
+    def _build_single_column_group(self, doc: Document, people_data: list):
+        """Single column layout: each person on one line."""
+        for person in people_data:
+            name = person[1] if person[1] else person[0]
+            date = person[2]
+            text = f"\u3000\u3000{date}\u3000{name}" if date else f"\u3000\u3000{name}"
+
+            para = doc.add_paragraph()
+            run = para.add_run(text)
+            run.font.size = Pt(14)
+            run.font.name = self.FONT_NAME
+            para.paragraph_format.left_indent = Inches(1.5)
+            para.paragraph_format.space_after = Pt(6)
+
+    def _build_dual_column_group(self, doc: Document, people_data: list):
+        """Dual column layout: split people into two halves with date padding."""
+        # Calculate max date length for alignment
+        max_date_length = 0
+        for person in people_data:
+            date = person[2]
+            if date:
+                max_date_length = max(max_date_length, len(date))
+
+        # Minimum 6 chars width (e.g. 十二月三十日)
+        if max_date_length < 6:
+            max_date_length = 6
+
+        half = (len(people_data) + 1) // 2
+        base_indent = Inches(0.5)
+
+        # Column 1
+        for idx in range(half):
+            if idx < len(people_data):
+                self._add_dual_column_person(
+                    doc, people_data[idx], max_date_length, base_indent
+                )
+
+        # Spacer between columns
+        spacer = doc.add_paragraph()
+        spacer_run = spacer.add_run("\u3000\u3000\u3000")
+        spacer_run.font.size = Pt(11)
+        spacer_run.font.name = self.FONT_NAME
+
+        # Column 2
+        for idx in range(half, len(people_data)):
+            self._add_dual_column_person(
+                doc, people_data[idx], max_date_length, base_indent
+            )
+
+    def _add_dual_column_person(self, doc, person, max_date_length, base_indent):
+        """Add a single person entry in dual column format."""
+        name = person[1] if person[1] else person[0]
+        date = person[2] if person[2] else ""
+
+        date_length = len(date) if date else 0
+        padding_needed = max_date_length - date_length
+        padding = "\u3000" * padding_needed
+        text = f"\u3000\u3000{date}{padding}\u3000{name}"
+
+        para = doc.add_paragraph()
+        run = para.add_run(text)
         run.font.size = Pt(11)
-        run.font.bold = True
-        self._set_font(run)
+        run.font.name = self.FONT_NAME
+        para.paragraph_format.left_indent = base_indent
+        para.paragraph_format.space_after = Pt(4)
 
-        # Entries as simple text lines
-        for name, display_name, date_str in entries:
-            p = cell.add_paragraph()
-            bname = display_name if display_name != name else ""
-            text = f"  {name}"
-            if bname:
-                text += f"（{bname}）"
-            text += f"　{date_str}"
-            run = p.add_run(text)
-            run.font.size = Pt(9.5)
-            self._set_font(run)
-
-    def _style_header_cell(self, cell):
-        """Style a table header cell."""
-        for paragraph in cell.paragraphs:
-            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            for run in paragraph.runs:
-                run.font.bold = True
-                run.font.size = Pt(10)
-                self._set_font(run)
-        # Light gray background
-        shading = cell._element.get_or_add_tcPr()
-        shd = shading.makeelement(qn("w:shd"), {
-            qn("w:val"): "clear",
-            qn("w:color"): "auto",
-            qn("w:fill"): "D5D8DC",
-        })
-        shading.append(shd)
-
-    def _style_data_cell(self, cell):
-        """Style a table data cell."""
-        for paragraph in cell.paragraphs:
-            for run in paragraph.runs:
-                run.font.size = Pt(10)
-                self._set_font(run)
-
-    def _remove_borders(self, cell):
-        """Remove all borders from a table cell."""
-        tcPr = cell._element.get_or_add_tcPr()
-        borders = tcPr.makeelement(qn("w:tcBorders"), {})
-        for edge in ("top", "left", "bottom", "right"):
-            el = borders.makeelement(qn(f"w:{edge}"), {
-                qn("w:val"): "none",
-                qn("w:sz"): "0",
-                qn("w:space"): "0",
-                qn("w:color"): "auto",
-            })
-            borders.append(el)
-        tcPr.append(borders)
+    def _convert_to_pdf(self, docx_path: Path):
+        """Try to convert .docx to .pdf using docx2pdf."""
+        try:
+            from docx2pdf import convert
+            pdf_path = docx_path.with_suffix(".pdf")
+            convert(str(docx_path), str(pdf_path))
+        except Exception:
+            pass
