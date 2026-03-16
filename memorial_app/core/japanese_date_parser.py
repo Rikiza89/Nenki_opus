@@ -14,26 +14,40 @@ import datetime
 from dataclasses import dataclass
 
 from memorial_app.core.era_converter import (
-    get_eras, find_era, era_to_gregorian, format_date_era,
+    get_eras,
+    find_era,
+    era_to_gregorian,
+    format_date_era,
 )
 
 
 class DateValidationError(Exception):
     """Raised when a date string cannot be parsed. Message is in Japanese."""
+
     pass
 
 
 @dataclass
 class ParsedDate:
     date: datetime.date
-    era_display: str   # e.g. "令和7年5月1日"
-    original: str       # the original input string
+    era_display: str  # e.g. "令和7年5月1日"
+    original: str  # the original input string
 
 
 # Kanji digit mapping for parsing
 _KANJI_DIGITS = {
-    "〇": 0, "零": 0, "一": 1, "二": 2, "三": 3, "四": 4,
-    "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
+    "〇": 0,
+    "零": 0,
+    "一": 1,
+    "二": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
+    "十": 10,
     "百": 100,
 }
 
@@ -97,7 +111,7 @@ def _parse_era_text(text: str) -> ParsedDate | None:
             day = int(m.group(3)) if m.group(3) else None
             # If month wasn't captured but there's kanji text after 年, skip to kanji parser
             if month is None:
-                after_match = text[m.end():]
+                after_match = text[m.end() :]
                 if re.search(r"[〇零一二三四五六七八九十百]+\s*月", after_match):
                     continue
             if month is None:
@@ -230,7 +244,9 @@ def _parse_kanji_text(text: str) -> ParsedDate | None:
     return None
 
 
-def _parse_split_columns(year_val, month_val, day_val, era_val=None) -> ParsedDate | None:
+def _parse_split_columns(
+    year_val, month_val, day_val, era_val=None
+) -> ParsedDate | None:
     """Parse date from separate columns (号年、月、日 pattern).
 
     Args:
@@ -255,7 +271,9 @@ def _parse_split_columns(year_val, month_val, day_val, era_val=None) -> ParsedDa
         if era:
             try:
                 d = era_to_gregorian(era.name, year, month, day)
-                return ParsedDate(d, format_date_era(d), f"{era_str}{year}年{month}月{day}日")
+                return ParsedDate(
+                    d, format_date_era(d), f"{era_str}{year}年{month}月{day}日"
+                )
             except ValueError:
                 return None
 

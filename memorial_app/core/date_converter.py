@@ -5,8 +5,16 @@ from memorial_app.core.era_converter import gregorian_to_era
 
 # Digit to kanji mapping
 _DIGIT_KANJI = {
-    "0": "〇", "1": "一", "2": "二", "3": "三", "4": "四",
-    "5": "五", "6": "六", "7": "七", "8": "八", "9": "九",
+    "0": "〇",
+    "1": "一",
+    "2": "二",
+    "3": "三",
+    "4": "四",
+    "5": "五",
+    "6": "六",
+    "7": "七",
+    "8": "八",
+    "9": "九",
 }
 
 # Counter-style kanji for numbers 1-99 (used in dates: months, days, years within era)

@@ -1,8 +1,16 @@
 """Database page - QTableView with CRUD operations and Excel sync."""
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QTableView, QPushButton,
-    QLineEdit, QLabel, QMessageBox, QHeaderView, QAbstractItemView,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QTableView,
+    QPushButton,
+    QLineEdit,
+    QLabel,
+    QMessageBox,
+    QHeaderView,
+    QAbstractItemView,
 )
 from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex, Signal
 from PySide6.QtGui import QFont
@@ -45,7 +53,9 @@ class PersonTableModel(QAbstractTableModel):
         fetch_count = min(remaining, self.PAGE_SIZE)
         if fetch_count <= 0:
             return
-        self.beginInsertRows(QModelIndex(), len(self._data), len(self._data) + fetch_count - 1)
+        self.beginInsertRows(
+            QModelIndex(), len(self._data), len(self._data) + fetch_count - 1
+        )
         new_data = self.db.get_all_persons(offset=len(self._data), limit=fetch_count)
         self._data.extend(new_data)
         if len(self._data) >= self._total:
@@ -169,7 +179,9 @@ class PeopleTablePage(QWidget):
 
         # Status bar
         self.status_label = QLabel()
-        self.status_label.setStyleSheet("color: #7f8c8d; font-size: 12px; padding: 4px;")
+        self.status_label.setStyleSheet(
+            "color: #7f8c8d; font-size: 12px; padding: 4px;"
+        )
         layout.addWidget(self.status_label)
 
     def refresh(self):
@@ -208,7 +220,8 @@ class PeopleTablePage(QWidget):
         person = self.model.get_person(idx.row())
         if person:
             reply = QMessageBox.question(
-                self, "削除確認",
+                self,
+                "削除確認",
                 f"「{person.name}」を削除しますか？\nこの操作は元に戻せません。",
                 QMessageBox.Yes | QMessageBox.No,
             )

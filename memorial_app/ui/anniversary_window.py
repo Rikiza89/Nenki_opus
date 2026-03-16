@@ -2,19 +2,33 @@
 
 import datetime
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QSpinBox, QTableWidget, QTableWidgetItem, QComboBox,
-    QGroupBox, QHeaderView, QMessageBox,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSpinBox,
+    QTableWidget,
+    QTableWidgetItem,
+    QComboBox,
+    QGroupBox,
+    QHeaderView,
+    QMessageBox,
 )
 from PySide6.QtCore import Qt, QThread, Signal
 
 from memorial_app.database.db_manager import DatabaseManager
 from memorial_app.core.nenki_calculator import (
-    get_anniversaries_for_year, get_upcoming_anniversaries, get_anniversaries_in_range,
+    get_anniversaries_for_year,
+    get_upcoming_anniversaries,
+    get_anniversaries_in_range,
     NenkiAnniversary,
 )
 from memorial_app.core.era_converter import format_date_era
-from memorial_app.core.date_converter import format_date_kanji_era, format_year_kanji_era
+from memorial_app.core.date_converter import (
+    format_date_kanji_era,
+    format_year_kanji_era,
+)
 
 
 class CalculationWorker(QThread):
@@ -48,7 +62,9 @@ class CalculationWorker(QThread):
                 elif self.mode == "upcoming":
                     anns = get_upcoming_anniversaries(death_date, months_ahead=12)
                 elif self.mode == "range":
-                    anns = get_anniversaries_in_range(death_date, self.start_date, self.end_date)
+                    anns = get_anniversaries_in_range(
+                        death_date, self.start_date, self.end_date
+                    )
                 else:
                     continue
 
@@ -106,7 +122,9 @@ class AnniversaryPage(QWidget):
         # Results table
         self.table = QTableWidget()
         self.table.setColumnCount(5)
-        self.table.setHorizontalHeaderLabels(["年忌", "日付（元号）", "日付（西暦）", "氏名", "法名"])
+        self.table.setHorizontalHeaderLabels(
+            ["年忌", "日付（元号）", "日付（西暦）", "氏名", "法名"]
+        )
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
@@ -119,7 +137,9 @@ class AnniversaryPage(QWidget):
         bottom_layout.addWidget(self.status_label, 1)
 
         self.export_btn = QPushButton("ドキュメント生成へ")
-        self.export_btn.setStyleSheet("background: #8e44ad; color: white; padding: 8px 16px;")
+        self.export_btn.setStyleSheet(
+            "background: #8e44ad; color: white; padding: 8px 16px;"
+        )
         self.export_btn.setEnabled(False)
         self.export_btn.clicked.connect(self._go_to_document_gen)
         bottom_layout.addWidget(self.export_btn)

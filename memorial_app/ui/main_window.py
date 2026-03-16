@@ -1,8 +1,15 @@
 """Main application window with sidebar navigation."""
 
 from PySide6.QtWidgets import (
-    QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QStackedWidget,
-    QPushButton, QLabel, QFrame, QSizePolicy,
+    QMainWindow,
+    QWidget,
+    QHBoxLayout,
+    QVBoxLayout,
+    QStackedWidget,
+    QPushButton,
+    QLabel,
+    QFrame,
+    QSizePolicy,
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
@@ -69,7 +76,9 @@ class MainWindow(QMainWindow):
         # Title
         title = QLabel("年忌管理")
         title.setAlignment(Qt.AlignCenter)
-        title.setStyleSheet("color: white; font-size: 18px; font-weight: bold; padding: 20px;")
+        title.setStyleSheet(
+            "color: white; font-size: 18px; font-weight: bold; padding: 20px;"
+        )
         layout.addWidget(title)
 
         # Separator
@@ -80,7 +89,14 @@ class MainWindow(QMainWindow):
 
         # Navigation buttons
         self.nav_buttons = {}
-        menu_items = ["ダッシュボード", "データベース", "データインポート", "年忌計算", "結果一覧", "設定"]
+        menu_items = [
+            "ダッシュボード",
+            "データベース",
+            "データインポート",
+            "年忌計算",
+            "結果一覧",
+            "設定",
+        ]
         for name in menu_items:
             btn = QPushButton(name)
             btn.setCheckable(True)

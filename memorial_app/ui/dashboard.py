@@ -2,7 +2,12 @@
 
 import datetime
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QGridLayout,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QFrame,
+    QGridLayout,
 )
 from PySide6.QtCore import Qt
 
@@ -23,7 +28,9 @@ class StatCard(QFrame):
         self.title_label = QLabel(title)
         self.title_label.setStyleSheet("color: #7f8c8d; font-size: 12px;")
         self.value_label = QLabel(value)
-        self.value_label.setStyleSheet("color: #2c3e50; font-size: 28px; font-weight: bold;")
+        self.value_label.setStyleSheet(
+            "color: #2c3e50; font-size: 28px; font-weight: bold;"
+        )
         layout.addWidget(self.title_label)
         layout.addWidget(self.value_label)
 
@@ -40,7 +47,9 @@ class DashboardPage(QWidget):
 
         # Header
         header = QLabel("ダッシュボード")
-        header.setStyleSheet("font-size: 24px; font-weight: bold; color: #2c3e50; margin-bottom: 16px;")
+        header.setStyleSheet(
+            "font-size: 24px; font-weight: bold; color: #2c3e50; margin-bottom: 16px;"
+        )
         layout.addWidget(header)
 
         # Stat cards
@@ -55,7 +64,9 @@ class DashboardPage(QWidget):
 
         # Upcoming list
         upcoming_header = QLabel("直近の年忌予定")
-        upcoming_header.setStyleSheet("font-size: 16px; font-weight: bold; color: #2c3e50; margin-top: 24px;")
+        upcoming_header.setStyleSheet(
+            "font-size: 16px; font-weight: bold; color: #2c3e50; margin-top: 24px;"
+        )
         layout.addWidget(upcoming_header)
 
         self.upcoming_list = QLabel("データを読み込み中...")
@@ -93,11 +104,17 @@ class DashboardPage(QWidget):
             except (ValueError, TypeError):
                 continue
 
-            from memorial_app.core.nenki_calculator import get_anniversaries_for_year, get_upcoming_anniversaries
+            from memorial_app.core.nenki_calculator import (
+                get_anniversaries_for_year,
+                get_upcoming_anniversaries,
+            )
+
             year_anns = get_anniversaries_for_year(death_date, this_year)
             this_year_count += len(year_anns)
 
-            upcoming = get_upcoming_anniversaries(death_date, months_ahead=12, from_date=today)
+            upcoming = get_upcoming_anniversaries(
+                death_date, months_ahead=12, from_date=today
+            )
             upcoming_count += len(upcoming)
 
             for ann in upcoming[:3]:  # Show first few per person
@@ -112,6 +129,7 @@ class DashboardPage(QWidget):
             lines = []
             for date, nenki, name in upcoming_items[:20]:
                 from memorial_app.core.era_converter import format_date_era
+
                 lines.append(f"{format_date_era(date)}  {nenki}  {name}")
             self.upcoming_list.setText("\n".join(lines))
         else:
@@ -120,6 +138,7 @@ class DashboardPage(QWidget):
         # Show sample data hint when database is empty
         if total == 0:
             from memorial_app.core.app_paths import EXAMPLE_FILE
+
             sample_path = EXAMPLE_FILE
             if sample_path.exists():
                 self.sample_hint.setText(

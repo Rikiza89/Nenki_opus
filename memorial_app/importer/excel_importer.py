@@ -4,10 +4,17 @@ import pandas as pd
 from pathlib import Path
 from dataclasses import dataclass, field
 
-
 # Known column name patterns for auto-detection
 _NAME_COLUMNS = {"氏名", "名前", "俗名", "name", "Name", "氏　名"}
-_DEATH_DATE_COLUMNS = {"没年月日", "命日", "死亡日", "death_date", "Death_Date", "逝去日", "往生日"}
+_DEATH_DATE_COLUMNS = {
+    "没年月日",
+    "命日",
+    "死亡日",
+    "death_date",
+    "Death_Date",
+    "逝去日",
+    "往生日",
+}
 _BUDDHIST_NAME_COLUMNS = {"法名", "戒名", "buddhist_name", "Buddhist_Name", "法　名"}
 
 # Split date column patterns
@@ -55,12 +62,16 @@ def read_file(file_path: Path) -> dict[str, pd.DataFrame]:
         return {"Sheet1": df}
     elif suffix == ".xls":
         xls = pd.ExcelFile(file_path, engine="xlrd")
-        return {name: pd.read_excel(xls, sheet_name=name, dtype=str, keep_default_na=False)
-                for name in xls.sheet_names}
+        return {
+            name: pd.read_excel(xls, sheet_name=name, dtype=str, keep_default_na=False)
+            for name in xls.sheet_names
+        }
     else:  # .xlsx
         xls = pd.ExcelFile(file_path, engine="openpyxl")
-        return {name: pd.read_excel(xls, sheet_name=name, dtype=str, keep_default_na=False)
-                for name in xls.sheet_names}
+        return {
+            name: pd.read_excel(xls, sheet_name=name, dtype=str, keep_default_na=False)
+            for name in xls.sheet_names
+        }
 
 
 def get_sheet_info(sheets: dict[str, pd.DataFrame]) -> list[SheetInfo]:
@@ -68,7 +79,9 @@ def get_sheet_info(sheets: dict[str, pd.DataFrame]) -> list[SheetInfo]:
     result = []
     for name, df in sheets.items():
         if len(df) > 0:
-            result.append(SheetInfo(name=name, row_count=len(df), columns=list(df.columns)))
+            result.append(
+                SheetInfo(name=name, row_count=len(df), columns=list(df.columns))
+            )
     return result
 
 
@@ -112,8 +125,15 @@ def auto_detect_mapping(columns: list[str]) -> ColumnMapping:
             break
 
     # Everything else is extra
-    used = {mapping.name_col, mapping.death_date_col, mapping.buddhist_name_col,
-            mapping.era_col, mapping.year_col, mapping.month_col, mapping.day_col}
+    used = {
+        mapping.name_col,
+        mapping.death_date_col,
+        mapping.buddhist_name_col,
+        mapping.era_col,
+        mapping.year_col,
+        mapping.month_col,
+        mapping.day_col,
+    }
     mapping.extra_cols = [c for c in columns if c not in used]
 
     return mapping

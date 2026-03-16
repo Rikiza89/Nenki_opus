@@ -8,11 +8,27 @@ from pathlib import Path
 from collections import defaultdict, OrderedDict
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QTableWidget, QTableWidgetItem, QCheckBox, QGroupBox,
-    QFileDialog, QMessageBox, QScrollArea, QGridLayout,
-    QHeaderView, QComboBox, QAbstractItemView, QDialog,
-    QFormLayout, QDialogButtonBox, QListWidget, QListWidgetItem,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QCheckBox,
+    QGroupBox,
+    QFileDialog,
+    QMessageBox,
+    QScrollArea,
+    QGridLayout,
+    QHeaderView,
+    QComboBox,
+    QAbstractItemView,
+    QDialog,
+    QFormLayout,
+    QDialogButtonBox,
+    QListWidget,
+    QListWidgetItem,
 )
 from PySide6.QtCore import Qt
 
@@ -21,16 +37,17 @@ from memorial_app.core.nenki_calculator import STANDARD_NENKI, DEFAULT_SELECTED_
 from memorial_app.core.date_converter import format_date_kanji_era, format_nenki_title
 from memorial_app.core.era_converter import format_date_era
 
-
 # All possible built-in fields the user can choose from
-BUILTIN_FIELDS = OrderedDict([
-    ("年忌名", "年忌名"),
-    ("法要日（元号漢字）", "法要日（元号漢字）"),
-    ("法要日（西暦）", "法要日（西暦）"),
-    ("氏名", "氏名"),
-    ("命日（元号漢字）", "命日（元号漢字）"),
-    ("命日（西暦）", "命日（西暦）"),
-])
+BUILTIN_FIELDS = OrderedDict(
+    [
+        ("年忌名", "年忌名"),
+        ("法要日（元号漢字）", "法要日（元号漢字）"),
+        ("法要日（西暦）", "法要日（西暦）"),
+        ("氏名", "氏名"),
+        ("命日（元号漢字）", "命日（元号漢字）"),
+        ("命日（西暦）", "命日（西暦）"),
+    ]
+)
 
 
 def _get_field_value(field_key: str, ann, person_name: str, attrs: dict) -> str:
@@ -55,7 +72,9 @@ def _get_field_value(field_key: str, ann, person_name: str, attrs: dict) -> str:
 class DocumentSettingsDialog(QDialog):
     """Dialog where user selects which fields to include and layout."""
 
-    def __init__(self, available_fields: list[str], sorted_data, target_year, parent=None):
+    def __init__(
+        self, available_fields: list[str], sorted_data, target_year, parent=None
+    ):
         super().__init__(parent)
         self.setWindowTitle("ドキュメント生成設定")
         self.setMinimumWidth(600)
@@ -73,14 +92,20 @@ class DocumentSettingsDialog(QDialog):
             f"年忌グループ: {len(sorted_data)}　|　"
             f"対象人数: {total_people}名"
         )
-        summary.setStyleSheet("font-size: 13px; color: #2c3e50; padding: 8px; background: #eaf2f8; border-radius: 4px;")
+        summary.setStyleSheet(
+            "font-size: 13px; color: #2c3e50; padding: 8px; background: #eaf2f8; border-radius: 4px;"
+        )
         layout.addWidget(summary)
 
         # Field selection
-        field_group = QGroupBox("ドキュメントに含める項目を選んでください（上から順に表示）")
+        field_group = QGroupBox(
+            "ドキュメントに含める項目を選んでください（上から順に表示）"
+        )
         field_layout = QVBoxLayout(field_group)
 
-        hint = QLabel("チェックした項目がドキュメントに出力されます。ドラッグで順序変更できます。")
+        hint = QLabel(
+            "チェックした項目がドキュメントに出力されます。ドラッグで順序変更できます。"
+        )
         hint.setStyleSheet("color: #7f8c8d; font-size: 11px;")
         field_layout.addWidget(hint)
 
@@ -138,7 +163,9 @@ class DocumentSettingsDialog(QDialog):
 
     def _validate_and_accept(self):
         if not self.get_selected_fields():
-            QMessageBox.warning(self, "選択エラー", "少なくとも1つの項目を選択してください。")
+            QMessageBox.warning(
+                self, "選択エラー", "少なくとも1つの項目を選択してください。"
+            )
             return
         self.accept()
 
@@ -170,7 +197,9 @@ class ResultsPage(QWidget):
         layout.addWidget(header)
 
         # Nenki type filter
-        nenki_group = QGroupBox("表示する年忌の種類（チェックを外すと出力から除外されます）")
+        nenki_group = QGroupBox(
+            "表示する年忌の種類（チェックを外すと出力から除外されます）"
+        )
         nenki_layout = QGridLayout(nenki_group)
         self.nenki_checks = {}
 
@@ -186,7 +215,9 @@ class ResultsPage(QWidget):
         # Results table
         self.table = QTableWidget()
         self.table.setColumnCount(5)
-        self.table.setHorizontalHeaderLabels(["年忌", "日付（元号漢字）", "日付（西暦）", "氏名", "法名"])
+        self.table.setHorizontalHeaderLabels(
+            ["年忌", "日付（元号漢字）", "日付（西暦）", "氏名", "法名"]
+        )
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -200,12 +231,16 @@ class ResultsPage(QWidget):
         btn_layout.addWidget(self.status_label, 1)
 
         word_btn = QPushButton("Word出力（縦書き）")
-        word_btn.setStyleSheet("background: #2980b9; color: white; padding: 8px 20px; font-weight: bold;")
+        word_btn.setStyleSheet(
+            "background: #2980b9; color: white; padding: 8px 20px; font-weight: bold;"
+        )
         word_btn.clicked.connect(self._export_word)
         btn_layout.addWidget(word_btn)
 
         pdf_btn = QPushButton("PDF出力")
-        pdf_btn.setStyleSheet("background: #c0392b; color: white; padding: 8px 20px; font-weight: bold;")
+        pdf_btn.setStyleSheet(
+            "background: #c0392b; color: white; padding: 8px 20px; font-weight: bold;"
+        )
         pdf_btn.clicked.connect(self._export_pdf)
         btn_layout.addWidget(pdf_btn)
 
@@ -232,7 +267,9 @@ class ResultsPage(QWidget):
             self.table.setItem(i, 3, QTableWidgetItem(name))
             self.table.setItem(i, 4, QTableWidgetItem(buddhist_name))
 
-        self.status_label.setText(f"{len(filtered)}件表示中（全{len(self._results)}件）")
+        self.status_label.setText(
+            f"{len(filtered)}件表示中（全{len(self._results)}件）"
+        )
 
     def _collect_available_fields(self) -> list[str]:
         """Discover all available fields from data: built-in + all EAV attribute keys."""
@@ -252,7 +289,9 @@ class ResultsPage(QWidget):
         The "年忌名" field is excluded from entry rows because it is already
         displayed once as the group header in the generated document.
         """
-        selected_nenki = {name for name, cb in self.nenki_checks.items() if cb.isChecked()}
+        selected_nenki = {
+            name for name, cb in self.nenki_checks.items() if cb.isChecked()
+        }
         filtered = [r for r in self._results if r[0].name in selected_nenki]
 
         # Exclude 年忌名 from per-row fields; it appears as group header
@@ -268,28 +307,44 @@ class ResultsPage(QWidget):
                 entry.append(_get_field_value(field, ann, name, attrs))
             groups[key].append(entry)
 
-        nenki_order = {name: i for i, (name, _) in enumerate([("百ヶ日", 0)] + STANDARD_NENKI)}
-        sorted_data = sorted(groups.items(), key=lambda x: nenki_order.get(x[0].split("|")[0], 999))
+        nenki_order = {
+            name: i for i, (name, _) in enumerate([("百ヶ日", 0)] + STANDARD_NENKI)
+        }
+        sorted_data = sorted(
+            groups.items(), key=lambda x: nenki_order.get(x[0].split("|")[0], 999)
+        )
         return sorted_data
 
     def _do_export(self, format_type: str):
         """Common export flow for Word and PDF."""
         if not self._results:
-            QMessageBox.information(self, "情報", "出力するデータがありません。\n年忌計算を先に実行してください。")
+            QMessageBox.information(
+                self,
+                "情報",
+                "出力するデータがありません。\n年忌計算を先に実行してください。",
+            )
             return
 
         # Check nenki filter
-        selected_nenki = {name for name, cb in self.nenki_checks.items() if cb.isChecked()}
+        selected_nenki = {
+            name for name, cb in self.nenki_checks.items() if cb.isChecked()
+        }
         filtered = [r for r in self._results if r[0].name in selected_nenki]
         if not filtered:
-            QMessageBox.information(self, "情報", "表示中のデータがありません。\n年忌の種類を選択してください。")
+            QMessageBox.information(
+                self,
+                "情報",
+                "表示中のデータがありません。\n年忌の種類を選択してください。",
+            )
             return
 
         # Discover available fields
         available_fields = self._collect_available_fields()
 
         # Show settings dialog
-        dialog = DocumentSettingsDialog(available_fields, [], self._target_year, parent=self)
+        dialog = DocumentSettingsDialog(
+            available_fields, [], self._target_year, parent=self
+        )
         # We pass empty sorted_data to dialog since we haven't built it yet
         # Build a temporary one for the summary count
         temp_groups = defaultdict(list)
@@ -328,14 +383,17 @@ class ResultsPage(QWidget):
             ext_filter = "PDF (*.pdf)"
             default_name = f"年忌表_{self._target_year}.pdf"
 
-        path, _ = QFileDialog.getSaveFileName(self, "保存先を選択", default_name, ext_filter)
+        path, _ = QFileDialog.getSaveFileName(
+            self, "保存先を選択", default_name, ext_filter
+        )
         if not path:
             return
 
         # Final confirmation
         field_list = "、".join(selected_fields)
         reply = QMessageBox.question(
-            self, "生成確認",
+            self,
+            "生成確認",
             f"以下の設定でドキュメントを生成します:\n\n"
             f"形式: {format_type.upper()}\n"
             f"ファイル: {Path(path).name}\n"
@@ -350,25 +408,36 @@ class ResultsPage(QWidget):
         try:
             if format_type == "word":
                 from memorial_app.documents.word_generator import WordGenerator
+
                 gen = WordGenerator()
                 gen.create_combined_document(
-                    sorted_data, title, Path(path),
-                    field_names=entry_fields, single_column=single_column,
+                    sorted_data,
+                    title,
+                    Path(path),
+                    field_names=entry_fields,
+                    single_column=single_column,
                 )
                 pdf_path = Path(path).with_suffix(".pdf")
                 if pdf_path.exists():
                     QMessageBox.information(
-                        self, "完了",
+                        self,
+                        "完了",
                         f"文書を保存しました:\nWord: {path}\nPDF: {pdf_path}",
                     )
                 else:
-                    QMessageBox.information(self, "完了", f"Word文書を保存しました:\n{path}")
+                    QMessageBox.information(
+                        self, "完了", f"Word文書を保存しました:\n{path}"
+                    )
             else:
                 from memorial_app.documents.pdf_generator import PdfGenerator
+
                 gen = PdfGenerator()
                 gen.create_document(
-                    sorted_data, title, Path(path),
-                    field_names=entry_fields, single_column=single_column,
+                    sorted_data,
+                    title,
+                    Path(path),
+                    field_names=entry_fields,
+                    single_column=single_column,
                 )
                 QMessageBox.information(self, "完了", f"PDFを保存しました:\n{path}")
         except Exception as e:

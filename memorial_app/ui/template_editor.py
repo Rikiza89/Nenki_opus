@@ -1,8 +1,16 @@
 """Template editor - configure document generation settings and preview."""
 
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QCheckBox,
-    QGroupBox, QGridLayout, QPushButton, QComboBox, QDialogButtonBox,
+    QDialog,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QCheckBox,
+    QGroupBox,
+    QGridLayout,
+    QPushButton,
+    QComboBox,
+    QDialogButtonBox,
 )
 from PySide6.QtCore import Qt
 

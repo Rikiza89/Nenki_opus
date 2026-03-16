@@ -36,13 +36,17 @@ class PdfGenerator:
             single_column: True for single column layout.
         """
         # Try docx2pdf conversion first
-        if self._try_docx2pdf(sorted_data, title, output_path, field_names, single_column):
+        if self._try_docx2pdf(
+            sorted_data, title, output_path, field_names, single_column
+        ):
             return
 
         # Fallback: generate PDF directly with reportlab
         self._generate_reportlab(sorted_data, title, output_path, field_names)
 
-    def _try_docx2pdf(self, sorted_data, title, output_path, field_names, single_column) -> bool:
+    def _try_docx2pdf(
+        self, sorted_data, title, output_path, field_names, single_column
+    ) -> bool:
         """Try to generate PDF by first creating a Word doc then converting."""
         try:
             from docx2pdf import convert
@@ -55,8 +59,11 @@ class PdfGenerator:
 
             gen = WordGenerator()
             gen.create_combined_document(
-                sorted_data, title, tmp_docx,
-                field_names=field_names, single_column=single_column,
+                sorted_data,
+                title,
+                tmp_docx,
+                field_names=field_names,
+                single_column=single_column,
             )
 
             convert(str(tmp_docx), str(output_path))
@@ -74,7 +81,11 @@ class PdfGenerator:
         from reportlab.pdfbase import pdfmetrics
         from reportlab.pdfbase.cidfonts import UnicodeCIDFont
         from reportlab.platypus import (
-            SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer,
+            SimpleDocTemplate,
+            Table,
+            TableStyle,
+            Paragraph,
+            Spacer,
         )
         from reportlab.lib.styles import ParagraphStyle
         from reportlab.lib.enums import TA_CENTER, TA_LEFT
@@ -89,28 +100,45 @@ class PdfGenerator:
         font_gothic = "HeiseiKakuGo-W5"
 
         title_style = ParagraphStyle(
-            "NenkiTitle", fontName=font_gothic, fontSize=16,
-            leading=22, alignment=TA_CENTER, spaceAfter=12,
+            "NenkiTitle",
+            fontName=font_gothic,
+            fontSize=16,
+            leading=22,
+            alignment=TA_CENTER,
+            spaceAfter=12,
         )
         section_style = ParagraphStyle(
-            "NenkiSection", fontName=font_gothic, fontSize=11,
-            leading=15, textColor=HexColor("#2C3E50"),
-            spaceBefore=10, spaceAfter=6,
+            "NenkiSection",
+            fontName=font_gothic,
+            fontSize=11,
+            leading=15,
+            textColor=HexColor("#2C3E50"),
+            spaceBefore=10,
+            spaceAfter=6,
         )
         cell_style = ParagraphStyle(
-            "NenkiCell", fontName=font_mincho, fontSize=9,
-            leading=12, alignment=TA_LEFT,
+            "NenkiCell",
+            fontName=font_mincho,
+            fontSize=9,
+            leading=12,
+            alignment=TA_LEFT,
         )
         header_cell_style = ParagraphStyle(
-            "NenkiHeader", fontName=font_gothic, fontSize=9,
-            leading=12, alignment=TA_CENTER,
+            "NenkiHeader",
+            fontName=font_gothic,
+            fontSize=9,
+            leading=12,
+            alignment=TA_CENTER,
         )
 
         page = landscape(A4)
         doc = SimpleDocTemplate(
-            str(output_path), pagesize=page,
-            topMargin=1.5 * cm, bottomMargin=1.5 * cm,
-            leftMargin=1.5 * cm, rightMargin=1.5 * cm,
+            str(output_path),
+            pagesize=page,
+            topMargin=1.5 * cm,
+            bottomMargin=1.5 * cm,
+            leftMargin=1.5 * cm,
+            rightMargin=1.5 * cm,
         )
 
         # Determine column headers
@@ -153,20 +181,24 @@ class PdfGenerator:
             col_widths = [col_width] * num_cols
 
             table = Table(table_data, colWidths=col_widths)
-            table.setStyle(TableStyle([
-                ("BACKGROUND", (0, 0), (-1, 0), HexColor("#D5D8DC")),
-                ("FONTNAME", (0, 0), (-1, 0), font_gothic),
-                ("FONTSIZE", (0, 0), (-1, 0), 9),
-                ("ALIGN", (0, 0), (-1, 0), "CENTER"),
-                ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
-                ("TOPPADDING", (0, 0), (-1, 0), 6),
-                ("FONTNAME", (0, 1), (-1, -1), font_mincho),
-                ("FONTSIZE", (0, 1), (-1, -1), 9),
-                ("TOPPADDING", (0, 1), (-1, -1), 4),
-                ("BOTTOMPADDING", (0, 1), (-1, -1), 4),
-                ("GRID", (0, 0), (-1, -1), 0.5, HexColor("#BDC3C7")),
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ]))
+            table.setStyle(
+                TableStyle(
+                    [
+                        ("BACKGROUND", (0, 0), (-1, 0), HexColor("#D5D8DC")),
+                        ("FONTNAME", (0, 0), (-1, 0), font_gothic),
+                        ("FONTSIZE", (0, 0), (-1, 0), 9),
+                        ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+                        ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
+                        ("TOPPADDING", (0, 0), (-1, 0), 6),
+                        ("FONTNAME", (0, 1), (-1, -1), font_mincho),
+                        ("FONTSIZE", (0, 1), (-1, -1), 9),
+                        ("TOPPADDING", (0, 1), (-1, -1), 4),
+                        ("BOTTOMPADDING", (0, 1), (-1, -1), 4),
+                        ("GRID", (0, 0), (-1, -1), 0.5, HexColor("#BDC3C7")),
+                        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ]
+                )
+            )
 
             elements.append(table)
             elements.append(Spacer(1, 8 * mm))

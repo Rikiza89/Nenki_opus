@@ -6,7 +6,11 @@ from pathlib import Path
 
 import pandas as pd
 
-from memorial_app.core.japanese_date_parser import parse_date, parse_date_from_columns, DateValidationError
+from memorial_app.core.japanese_date_parser import (
+    parse_date,
+    parse_date_from_columns,
+    DateValidationError,
+)
 from memorial_app.database.db_manager import DatabaseManager
 from memorial_app.importer.excel_importer import ColumnMapping
 
@@ -15,8 +19,8 @@ from memorial_app.importer.excel_importer import ColumnMapping
 class ValidatedRow:
     row_index: int
     name: str
-    death_date: str         # ISO format
-    era_display: str        # Japanese era display
+    death_date: str  # ISO format
+    era_display: str  # Japanese era display
     attributes: dict[str, str]
     source_file_path: str
 
@@ -25,18 +29,22 @@ class ValidatedRow:
 class ErrorRow:
     row_index: int
     raw_data: dict[str, str]
-    error_message: str       # Japanese error message
+    error_message: str  # Japanese error message
 
 
 @dataclass
 class ValidationResult:
     valid_rows: list[ValidatedRow] = field(default_factory=list)
     error_rows: list[ErrorRow] = field(default_factory=list)
-    duplicate_rows: list[tuple[ValidatedRow, int]] = field(default_factory=list)  # (row, existing_person_id)
+    duplicate_rows: list[tuple[ValidatedRow, int]] = field(
+        default_factory=list
+    )  # (row, existing_person_id)
 
 
 class ValidationPipeline:
-    def __init__(self, db_manager: DatabaseManager, mapping: ColumnMapping, source_path: str):
+    def __init__(
+        self, db_manager: DatabaseManager, mapping: ColumnMapping, source_path: str
+    ):
         self.db = db_manager
         self.mapping = mapping
         self.source_path = source_path
@@ -76,11 +84,17 @@ class ValidationPipeline:
             # Stage 3: Business rules
             death_date = parsed.date
             if death_date > datetime.date.today():
-                result.error_rows.append(ErrorRow(idx, raw, f"没年月日が未来の日付です: {parsed.era_display}"))
+                result.error_rows.append(
+                    ErrorRow(
+                        idx, raw, f"没年月日が未来の日付です: {parsed.era_display}"
+                    )
+                )
                 continue
 
             if death_date.year < 1868:
-                result.error_rows.append(ErrorRow(idx, raw, f"没年月日が明治以前です: {parsed.era_display}"))
+                result.error_rows.append(
+                    ErrorRow(idx, raw, f"没年月日が明治以前です: {parsed.era_display}")
+                )
                 continue
 
             # Stage 4: Build attributes
@@ -116,7 +130,9 @@ class ValidationPipeline:
             year_val = row.get(self.mapping.year_col, "")
             month_val = row.get(self.mapping.month_col, "")
             day_val = row.get(self.mapping.day_col, "")
-            era_val = row.get(self.mapping.era_col, "") if self.mapping.era_col else None
+            era_val = (
+                row.get(self.mapping.era_col, "") if self.mapping.era_col else None
+            )
             return parse_date_from_columns(year_val, month_val, day_val, era_val)
         else:
             col = self.mapping.death_date_col
@@ -138,7 +154,9 @@ class ValidationPipeline:
         if self.mapping.buddhist_name_col:
             val = str(row.get(self.mapping.buddhist_name_col, "")).strip()
             if val:
-                target = remap.get(self.mapping.buddhist_name_col, self.mapping.buddhist_name_col)
+                target = remap.get(
+                    self.mapping.buddhist_name_col, self.mapping.buddhist_name_col
+                )
                 attrs[target] = val
 
         for col in self.mapping.extra_cols:
@@ -167,10 +185,12 @@ def import_validated_rows(db: DatabaseManager, rows: list[ValidatedRow]) -> int:
     """Import validated rows into the database. Returns count."""
     records = []
     for row in rows:
-        records.append({
-            "name": row.name,
-            "death_date": row.death_date,
-            "source_file_path": row.source_file_path,
-            "attributes": row.attributes,
-        })
+        records.append(
+            {
+                "name": row.name,
+                "death_date": row.death_date,
+                "source_file_path": row.source_file_path,
+                "attributes": row.attributes,
+            }
+        )
     return db.add_persons_batch(records)

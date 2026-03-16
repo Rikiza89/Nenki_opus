@@ -21,6 +21,7 @@ def _generate_example_excel():
         return
     try:
         from memorial_app.scripts.generate_example_data import generate_example
+
         generate_example(EXAMPLE_FILE)
     except Exception:
         pass

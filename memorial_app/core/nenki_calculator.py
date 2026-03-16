@@ -9,9 +9,9 @@ from dataclasses import dataclass
 
 @dataclass
 class NenkiAnniversary:
-    name: str               # e.g. "一周忌"
-    date: datetime.date     # Anniversary date
-    years_offset: int       # Offset from death year
+    name: str  # e.g. "一周忌"
+    date: datetime.date  # Anniversary date
+    years_offset: int  # Offset from death year
     death_date: datetime.date
 
 
@@ -35,21 +35,32 @@ STANDARD_NENKI = [
 
 # Default pre-checked nenki types for document generation
 DEFAULT_SELECTED_NENKI = [
-    "一周忌", "三回忌", "七回忌", "十三回忌", "十七回忌",
-    "二十五回忌", "二十七回忌", "三十三回忌", "五十回忌",
+    "一周忌",
+    "三回忌",
+    "七回忌",
+    "十三回忌",
+    "十七回忌",
+    "二十五回忌",
+    "二十七回忌",
+    "三十三回忌",
+    "五十回忌",
 ]
 
 
 def _year_offset_to_name(offset: int) -> str:
     """Generate nenki name for offsets beyond the standard list (every 50 years after 五十回忌)."""
     kanji_map = {
-        100: "百回忌", 150: "百五十回忌", 200: "二百回忌",
+        100: "百回忌",
+        150: "百五十回忌",
+        200: "二百回忌",
     }
     actual_kaiki = offset + 1
     return kanji_map.get(actual_kaiki, f"{actual_kaiki}回忌")
 
 
-def calculate_all_anniversaries(death_date: datetime.date, max_year: int | None = None) -> list[NenkiAnniversary]:
+def calculate_all_anniversaries(
+    death_date: datetime.date, max_year: int | None = None
+) -> list[NenkiAnniversary]:
     """Calculate all Nenki anniversaries for a given death date.
 
     Args:
@@ -87,7 +98,14 @@ def calculate_all_anniversaries(death_date: datetime.date, max_year: int | None 
         # Default: calculate up to 200 years
         for offset in [99, 149, 199]:
             ann_date = _anniversary_date(death_date, offset)
-            results.append(NenkiAnniversary(name=_year_offset_to_name(offset), date=ann_date, years_offset=offset, death_date=death_date))
+            results.append(
+                NenkiAnniversary(
+                    name=_year_offset_to_name(offset),
+                    date=ann_date,
+                    years_offset=offset,
+                    death_date=death_date,
+                )
+            )
 
     return sorted(results, key=lambda a: a.date)
 
@@ -103,7 +121,9 @@ def _anniversary_date(death_date: datetime.date, years_offset: int) -> datetime.
         return datetime.date(target_year, 2, 28)
 
 
-def get_anniversaries_for_year(death_date: datetime.date, target_year: int) -> list[NenkiAnniversary]:
+def get_anniversaries_for_year(
+    death_date: datetime.date, target_year: int
+) -> list[NenkiAnniversary]:
     """Get all Nenki anniversaries that fall in the specified year."""
     all_anns = calculate_all_anniversaries(death_date, max_year=target_year + 1)
     return [a for a in all_anns if a.date.year == target_year]
@@ -138,6 +158,7 @@ def _add_months(date: datetime.date, months: int) -> datetime.date:
     month = (month - 1) % 12 + 1
     # Handle day overflow
     import calendar
+
     max_day = calendar.monthrange(year, month)[1]
     day = min(date.day, max_day)
     return datetime.date(year, month, day)

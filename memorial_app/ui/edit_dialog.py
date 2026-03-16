@@ -4,8 +4,17 @@ import datetime
 from pathlib import Path
 
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QLineEdit,
-    QLabel, QPushButton, QScrollArea, QWidget, QMessageBox, QDateEdit,
+    QDialog,
+    QVBoxLayout,
+    QHBoxLayout,
+    QFormLayout,
+    QLineEdit,
+    QLabel,
+    QPushButton,
+    QScrollArea,
+    QWidget,
+    QMessageBox,
+    QDateEdit,
     QComboBox,
 )
 from PySide6.QtCore import Qt, QDate
@@ -16,7 +25,9 @@ from memorial_app.core.era_converter import format_date_era
 
 
 class EditDialog(QDialog):
-    def __init__(self, db_manager: DatabaseManager, person_id: int | None = None, parent=None):
+    def __init__(
+        self, db_manager: DatabaseManager, person_id: int | None = None, parent=None
+    ):
         super().__init__(parent)
         self.db = db_manager
         self.person_id = person_id
@@ -53,7 +64,9 @@ class EditDialog(QDialog):
 
         # Dynamic attributes section
         attr_header = QLabel("追加項目")
-        attr_header.setStyleSheet("font-weight: bold; font-size: 13px; margin-top: 12px;")
+        attr_header.setStyleSheet(
+            "font-weight: bold; font-size: 13px; margin-top: 12px;"
+        )
         layout.addWidget(attr_header)
 
         scroll = QScrollArea()
@@ -127,7 +140,9 @@ class EditDialog(QDialog):
             return
         try:
             parsed = parse_date(text)
-            self.date_preview.setText(f"→ {parsed.era_display} ({parsed.date.isoformat()})")
+            self.date_preview.setText(
+                f"→ {parsed.era_display} ({parsed.date.isoformat()})"
+            )
             self.date_preview.setStyleSheet("color: #27ae60; font-size: 12px;")
         except DateValidationError:
             self.date_preview.setText("日付を認識できません")
@@ -191,7 +206,10 @@ class EditDialog(QDialog):
 
         if self.is_edit:
             person = self.db.update_person(
-                self.person_id, name=name, death_date=death_date_iso, attributes=attributes,
+                self.person_id,
+                name=name,
+                death_date=death_date_iso,
+                attributes=attributes,
             )
             if person and person.source_file_path:
                 self._sync_excel(person)
@@ -211,6 +229,7 @@ class EditDialog(QDialog):
 
         try:
             import openpyxl
+
             wb = openpyxl.load_workbook(path)
             ws = wb.active
 
@@ -229,7 +248,13 @@ class EditDialog(QDialog):
                         # Update death_date column if found
                         for i, h in enumerate(header_row):
                             h_str = str(h or "")
-                            if h_str in ("没年月日", "命日", "死亡日", "逝去日", "往生日"):
+                            if h_str in (
+                                "没年月日",
+                                "命日",
+                                "死亡日",
+                                "逝去日",
+                                "往生日",
+                            ):
                                 row[i].value = person.death_date
                         # Update attribute columns
                         for attr in person.attributes:
@@ -239,6 +264,10 @@ class EditDialog(QDialog):
                         break
 
                 wb.save(path)
-                QMessageBox.information(self, "Excel同期", "元のExcelファイルも更新しました。")
+                QMessageBox.information(
+                    self, "Excel同期", "元のExcelファイルも更新しました。"
+                )
         except Exception as e:
-            QMessageBox.warning(self, "Excel同期エラー", f"Excelファイルの更新に失敗しました:\n{e}")
+            QMessageBox.warning(
+                self, "Excel同期エラー", f"Excelファイルの更新に失敗しました:\n{e}"
+            )
