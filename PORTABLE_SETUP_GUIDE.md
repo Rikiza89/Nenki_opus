@@ -130,7 +130,7 @@ USB_ROOT\
    | ステップ | 内容 |
    |----------|------|
    | 1/5 | Embedded Python の存在確認 |
-   | 2/5 | `python311._pth` を書き換えて `site-packages` を有効化 |
+   | 2/5 | `python311._pth` をリネームして隔離モードを無効化 |
    | 3/5 | `python\Lib\site-packages\` フォルダを作成 |
    | 4/5 | pip をインストール（なければ `get-pip.py` を取得） |
    | 5/5 | 必要なパッケージをすべてインストール |
@@ -189,26 +189,27 @@ USB を持ち歩けばどの PC でもデータを引き継げます。**
 
 ---
 
-## python311._pth の内容について（技術メモ）
+## python311._pth の扱いについて（技術メモ）
 
-`setup_packages.bat` は `nenki_app\python\python311._pth` を以下の内容に書き換えます:
+Embedded Python は通常「隔離モード（isolated mode）」で動作し、
+`python311._pth` ファイルによってパスが厳しく制御されています。
 
+`setup_packages.bat` はこのファイルを **リネーム**（`python311._pth.bak`）することで
+隔離モードを無効化します。
+
+`run.bat` は代わりに `PYTHONHOME` 環境変数を使って Python に場所を教えます:
+
+```batch
+set PYTHONHOME=%CD%\python    ← 標準ライブラリと site-packages の場所
+set PYTHONPATH=%CD%           ← memorial_app パッケージのある場所（nenki_app\）
 ```
-python311.zip
-.
-Lib\site-packages
-import site
-```
 
-| 行 | 意味 |
-|----|------|
-| `python311.zip` | Python 標準ライブラリ（zip 形式） |
-| `.` | Python 実行ファイルのあるフォルダ（`python\`）自身 |
-| `Lib\site-packages` | pip でインストールしたパッケージの場所 |
-| `import site` | site.py を有効化（pip が正常動作するために必要） |
+| 変数 | 意味 |
+|------|------|
+| `PYTHONHOME` | Python 実行時の「ホーム」（stdlib・site-packages を探す場所） |
+| `PYTHONPATH` | アプリのソースコード（`memorial_app` パッケージ）の場所 |
 
-> デフォルトの Embedded Python では `import site` がコメントアウトされており、
-> pip が動作しません。この書き換えによって pip と site-packages が有効になります。
+> `_pth` ファイルを書き換えるより、環境変数で制御する方が副作用なく安全です。
 
 ---
 
