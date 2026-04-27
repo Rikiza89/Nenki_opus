@@ -25,7 +25,7 @@ class PdfGenerator:
         output_path: Path,
         field_names: list[str] | None = None,
         single_column: bool = True,
-    ):
+    ) -> bool:
         """Create a PDF nenki document.
 
         Args:
@@ -34,15 +34,19 @@ class PdfGenerator:
             output_path: Path to save the PDF.
             field_names: List of field names corresponding to each entry's values.
             single_column: True for single column layout.
+
+        Returns:
+            True if converted via docx2pdf (full tategaki layout preserved),
+            False if generated via reportlab fallback (horizontal layout).
         """
-        # Try docx2pdf conversion first
         if self._try_docx2pdf(
             sorted_data, title, output_path, field_names, single_column
         ):
-            return
+            return True
 
-        # Fallback: generate PDF directly with reportlab
+        # Fallback: generate PDF directly with reportlab (no tategaki)
         self._generate_reportlab(sorted_data, title, output_path, field_names)
+        return False
 
     def _try_docx2pdf(
         self, sorted_data, title, output_path, field_names, single_column
@@ -64,6 +68,7 @@ class PdfGenerator:
                 tmp_docx,
                 field_names=field_names,
                 single_column=single_column,
+                auto_pdf=False,
             )
 
             convert(str(tmp_docx), str(output_path))

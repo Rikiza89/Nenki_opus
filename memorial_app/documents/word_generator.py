@@ -54,6 +54,7 @@ class WordGenerator:
         output_path: Path,
         field_names: list[str] | None = None,
         single_column: bool = True,
+        auto_pdf: bool = True,
     ):
         """Create a combined nenki document with vertical Japanese text.
 
@@ -108,8 +109,8 @@ class WordGenerator:
 
         doc.save(str(output_path))
 
-        # Auto-convert to PDF
-        self._convert_to_pdf(output_path)
+        if auto_pdf:
+            self._convert_to_pdf(output_path)
 
     def _add_title(self, doc: Document, title: str):
         """Add full-width centered title (single column mode)."""
