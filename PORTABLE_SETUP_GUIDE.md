@@ -23,50 +23,57 @@ Windows PC でもそのまま起動できるようにする手順を説明しま
 
 ```
 USB_ROOT\
-├── python\                        ← Embedded Python 3.11.9（手動で配置）
-│   ├── python.exe
-│   ├── python311.zip
-│   ├── python311._pth             ← setup_packages.bat が自動で書き換える
-│   └── Lib\
-│       └── site-packages\         ← setup_packages.bat が自動で作成・インストール
-│           ├── PySide6\
-│           ├── sqlalchemy\
-│           └── ...（その他のパッケージ）
-├── memorial_app\                  ← アプリ本体（このリポジトリの内容）
-│   ├── app\
-│   ├── core\
-│   ├── database\
-│   ├── documents\
-│   ├── importer\
-│   ├── ui\
-│   └── data\                      ← DB・バックアップ（初回起動時に自動作成）
-│       ├── memorial.db
-│       ├── backups\
-│       └── config\
-├── run.py                         ← 起動スクリプト（自動）
-├── run.bat                        ← ダブルクリックで起動
-├── setup_packages.bat             ← 初回セットアップ用
-└── python311._pth                 ← _pth テンプレート（参考用）
+└── nenki_app\                         ← このフォルダをまるごと USB に置く
+    ├── python\                        ← Embedded Python 3.11.9（手動で配置）
+    │   ├── python.exe
+    │   ├── python311.zip
+    │   ├── python311._pth             ← setup_packages.bat が自動で書き換える
+    │   └── Lib\
+    │       └── site-packages\         ← setup_packages.bat が自動で作成・インストール
+    │           ├── PySide6\
+    │           ├── sqlalchemy\
+    │           └── ...（その他のパッケージ）
+    ├── memorial_app\                  ← アプリ本体
+    │   ├── app\
+    │   ├── core\
+    │   ├── database\
+    │   ├── documents\
+    │   ├── importer\
+    │   ├── ui\
+    │   └── data\                      ← DB・バックアップ（初回起動時に自動作成）
+    │       ├── memorial.db
+    │       ├── backups\
+    │       └── config\
+    ├── run.py                         ← 起動スクリプト（自動）
+    ├── run.bat                        ← ダブルクリックで起動
+    ├── setup_packages.bat             ← 初回セットアップ用
+    └── python311._pth                 ← _pth テンプレート（参考用）
 ```
 
 ---
 
-## ステップ 1 — USB にアプリファイルをコピーする
+## ステップ 1 — USB に nenki_app フォルダをコピーする
 
-1. このリポジトリ（`Nenki_opus`）の **内容すべて** を USB のルートにコピーします。
+1. このリポジトリ（`Nenki_opus`）の中にある **`nenki_app`** フォルダを丸ごと
+   USB のルートにコピーします。
 
    ```
-   コピー対象:
-     memorial_app\
-     run.py
-     run.bat
-     setup_packages.bat
-     python311._pth
-     requirements.txt
-     pyproject.toml
+   コピー対象（フォルダ 1 つだけ）:
+     nenki_app\
    ```
 
-   > `memorial_django\` など、`memorial_app` 以外のフォルダはコピー不要です。
+   コピー後の USB の状態:
+   ```
+   USB_ROOT\
+   └── nenki_app\
+       ├── memorial_app\
+       ├── run.py
+       ├── run.bat
+       ├── setup_packages.bat
+       └── python311._pth
+   ```
+
+   > `memorial_django\` や `requirements.txt` などはコピー不要です（開発用ファイル）。
 
 ---
 
@@ -90,22 +97,26 @@ USB_ROOT\
 
 ---
 
-## ステップ 3 — Python を USB に展開する
+## ステップ 3 — Python を nenki_app フォルダに展開する
 
-1. USB ルートに `python` という名前のフォルダを作成します。
+1. USB 上の `nenki_app\` の中に `python` という名前のフォルダを作成します。
+
+   ```
+   USB_ROOT\nenki_app\python\    ← このフォルダを作る
+   ```
 
 2. ダウンロードした `python-3.11.9-embed-amd64.zip` を展開し、
-   中身をすべて `USB_ROOT\python\` に入れます。
+   中身をすべて `nenki_app\python\` に入れます。
 
 3. 展開後、以下のファイルが存在することを確認します:
    ```
-   USB_ROOT\python\python.exe        ← これが存在すれば OK
-   USB_ROOT\python\python311.zip
-   USB_ROOT\python\python311._pth    ← setup_packages.bat が書き換えます
+   USB_ROOT\nenki_app\python\python.exe        ← これが存在すれば OK
+   USB_ROOT\nenki_app\python\python311.zip
+   USB_ROOT\nenki_app\python\python311._pth    ← setup_packages.bat が書き換えます
    ```
 
    > ⚠️ `python\python\python.exe` のように二重になっていないか確認してください。
-   > 展開先は `python\` の **直下** です。
+   > 展開先は `nenki_app\python\` の **直下** です。
 
 ---
 
@@ -113,7 +124,7 @@ USB_ROOT\
 
 1. インターネットに接続した状態で行います。
 
-2. USB ルートにある **`setup_packages.bat`** をダブルクリックします。
+2. `nenki_app\` の中にある **`setup_packages.bat`** をダブルクリックします。
 
 3. 以下の処理が自動で行われます:
    | ステップ | 内容 |
@@ -131,37 +142,37 @@ USB_ROOT\
    > - 低速回線: 約 10〜20 分
    > PySide6（約 900 MB）が最も時間がかかります。
 
-   > ⚠️ エラーが出た場合は「ステップ 5 — トラブルシューティング」を参照してください。
+   > ⚠️ エラーが出た場合は「トラブルシューティング」セクションを参照してください。
 
 ---
 
 ## ステップ 5 — アプリを起動する
 
-1. USB ルートにある **`run.bat`** をダブルクリックします。
+1. `nenki_app\` の中にある **`run.bat`** をダブルクリックします。
 
 2. 年忌管理アプリが起動します。
 
-   > 初回起動時にデータフォルダ（`memorial_app\data\`）が自動作成されます。
+   > 初回起動時にデータフォルダ（`nenki_app\memorial_app\data\`）が自動作成されます。
 
 ---
 
 ## 別の PC で使う場合 / Using on a Different PC
 
-USB をそのまま別の Windows PC に差し込んで `run.bat` をダブルクリックするだけです。
+USB をそのまま別の Windows PC に差し込んで `nenki_app\run.bat` をダブルクリックするだけです。
 追加のインストールは一切不要です。
 
-**データ（memorial.db）は USB 内の `memorial_app\data\` に保存されているため、
+**データ（memorial.db）は `nenki_app\memorial_app\data\` に保存されているため、
 USB を持ち歩けばどの PC でもデータを引き継げます。**
 
 ---
 
 ## PC にコピーしてインストールする場合 / Installing on a PC
 
-USB からすべてのファイルを PC の任意のフォルダ（例: `C:\nenki\`）にコピーして、
-同様に `run.bat` をダブルクリックするだけです。
+`nenki_app\` フォルダを丸ごと PC の任意の場所（例: `C:\nenki_app\`）にコピーして、
+`run.bat` をダブルクリックするだけです。
 
 ショートカットをデスクトップに作る場合:
-1. `run.bat` を右クリック →「ショートカットの作成」
+1. `nenki_app\run.bat` を右クリック →「ショートカットの作成」
 2. 作成されたショートカットをデスクトップに移動
 
 ---
@@ -180,7 +191,7 @@ USB からすべてのファイルを PC の任意のフォルダ（例: `C:\nen
 
 ## python311._pth の内容について（技術メモ）
 
-`setup_packages.bat` は `python\python311._pth` を以下の内容に書き換えます:
+`setup_packages.bat` は `nenki_app\python\python311._pth` を以下の内容に書き換えます:
 
 ```
 python311.zip
@@ -204,7 +215,7 @@ import site
 ## トラブルシューティング / Troubleshooting
 
 ### ❌ `python\python.exe が見つかりません` と表示される
-→ ステップ 2〜3 を再確認。`python\` フォルダの直下に `python.exe` があるか確認。
+→ ステップ 3 を再確認。`nenki_app\python\` の直下に `python.exe` があるか確認。
 
 ### ❌ `get-pip.py のダウンロードに失敗しました` と表示される
 → インターネット接続を確認。プロキシ環境の場合、ネットワーク管理者に相談。
@@ -214,10 +225,9 @@ import site
   一時的にオフにして再試行してください。
 
 ### ❌ アプリ起動時に黒いコマンドプロンプトが一瞬出て消える
-→ `run.bat` の最後の `pause` が無い場合にエラーが発生していますが、
-  以下の手順でエラー内容を確認できます:
+→ エラーが発生しています。以下の手順でエラー内容を確認できます:
   1. コマンドプロンプト（cmd.exe）を開く
-  2. `cd /d <USB ドライブレター>:\`（例: `cd /d E:\`）
+  2. `cd /d <USB ドライブレター>:\nenki_app`（例: `cd /d E:\nenki_app`）
   3. `run.bat` と入力して Enter
 
 ### ❌ PDF が横書きになる（縦書きではない）

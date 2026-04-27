@@ -5,4 +5,5 @@ __pycache__/
 dist/
 build/
 .pytest_cache/
-memorial_app/data/
+nenki_app/memorial_app/data/
+nenki_app/python/
