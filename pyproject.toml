@@ -26,4 +26,5 @@ pdf = [
 nenki = "memorial_app.app.main:main"
 
 [tool.setuptools.packages.find]
+where = ["nenki_app"]
 include = ["memorial_app*"]
