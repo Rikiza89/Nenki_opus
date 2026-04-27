@@ -97,7 +97,8 @@ class DashboardPage(QWidget):
         this_year_count = 0
         upcoming_items = []
 
-        persons = self.db.get_all_persons(offset=0, limit=10000)
+        _DASHBOARD_LIMIT = 500
+        persons = self.db.get_all_persons(offset=0, limit=_DASHBOARD_LIMIT)
         for person in persons:
             try:
                 death_date = person.death_date_obj

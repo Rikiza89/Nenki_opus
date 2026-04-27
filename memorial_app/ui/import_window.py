@@ -488,8 +488,16 @@ class ImportPage(QWidget):
     def refresh(self):
         pass
 
+    def _stop_worker(self):
+        """Stop any running background worker and wait for it to finish."""
+        if self._worker is not None and self._worker.isRunning():
+            self._worker.quit()
+            self._worker.wait(3000)
+        self._worker = None
+
     def _reset(self):
         """Reset to step 1."""
+        self._stop_worker()
         self.sheets = None
         self.current_df = None
         self.mapping = None
@@ -502,6 +510,10 @@ class ImportPage(QWidget):
         self.single_sheet_label.setVisible(False)
         self.step1_next.setEnabled(False)
         self._go_to_step(0)
+
+    def hideEvent(self, event):
+        self._stop_worker()
+        super().hideEvent(event)
 
     # ─── Step 1 Logic: File + Sheet Selection ───
 
@@ -885,6 +897,7 @@ class ImportPage(QWidget):
         self._worker.start()
 
     def _on_validation_finished(self, result: ValidationResult):
+        self._worker = None
         self._validation_result = result
         self.validation_progress.setValue(self.validation_progress.maximum())
 
@@ -926,6 +939,7 @@ class ImportPage(QWidget):
         self.step5_next.setEnabled(valid_count > 0 or dup_count > 0)
 
     def _on_validation_error(self, error_msg: str):
+        self._worker = None
         self.validation_status.setText(f"検証エラー: {error_msg}")
         self.validation_status.setStyleSheet(
             "color: #e74c3c; font-size: 13px; padding: 8px;"

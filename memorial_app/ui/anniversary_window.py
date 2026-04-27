@@ -149,7 +149,14 @@ class AnniversaryPage(QWidget):
     def refresh(self):
         pass
 
+    def _stop_worker(self):
+        if self._worker is not None and self._worker.isRunning():
+            self._worker.quit()
+            self._worker.wait(3000)
+        self._worker = None
+
     def _calculate(self):
+        self._stop_worker()
         mode = self.mode_combo.currentData()
 
         self._worker = CalculationWorker(
@@ -158,8 +165,14 @@ class AnniversaryPage(QWidget):
             target_year=self.year_spin.value(),
         )
         self._worker.finished.connect(self._on_results)
+        self._worker.finished.connect(lambda: setattr(self, "_worker", None))
         self._worker.error.connect(lambda e: QMessageBox.critical(self, "エラー", e))
+        self._worker.error.connect(lambda _: setattr(self, "_worker", None))
         self._worker.start()
+
+    def hideEvent(self, event):
+        self._stop_worker()
+        super().hideEvent(event)
 
     def _on_results(self, results):
         self._results = results

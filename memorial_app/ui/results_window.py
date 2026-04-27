@@ -524,14 +524,23 @@ class ResultsPage(QWidget):
                 from memorial_app.documents.pdf_generator import PdfGenerator
 
                 gen = PdfGenerator()
-                gen.create_document(
+                used_docx2pdf = gen.create_document(
                     sorted_data,
                     title,
                     Path(path),
                     field_names=entry_fields,
                     single_column=single_column,
                 )
-                QMessageBox.information(self, "完了", f"PDFを保存しました:\n{path}")
+                if used_docx2pdf:
+                    QMessageBox.information(self, "完了", f"PDFを保存しました:\n{path}")
+                else:
+                    QMessageBox.information(
+                        self,
+                        "完了（代替レイアウト）",
+                        f"PDFを保存しました:\n{path}\n\n"
+                        "※ Microsoft Wordが見つからないため、横書きレイアウトで出力しました。\n"
+                        "縦書きレイアウトが必要な場合は、Word出力（.docx）をご利用ください。",
+                    )
         except Exception as e:
             QMessageBox.critical(self, "エラー", f"文書生成に失敗しました:\n{e}")
 
