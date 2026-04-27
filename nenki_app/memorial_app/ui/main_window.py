@@ -101,7 +101,7 @@ class MainWindow(QMainWindow):
             btn = QPushButton(name)
             btn.setCheckable(True)
             btn.setCursor(Qt.PointingHandCursor)
-            btn.clicked.connect(lambda checked, n=name: self._select_page(n))
+            btn.clicked.connect(lambda checked=False, n=name: self._select_page(n))
             layout.addWidget(btn)
             self.nav_buttons[name] = btn
 
