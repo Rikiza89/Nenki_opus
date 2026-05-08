@@ -7,9 +7,16 @@ from pathlib import Path
 
 from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.exc import SQLAlchemyError
 
 from memorial_app.database.models import Base, Person, Attribute
 from memorial_app.core.app_paths import DB_PATH, BACKUP_DIR
+from memorial_app.core.logger import logger
+
+
+class DatabaseError(Exception):
+    """Custom exception for database operations."""
+    pass
 
 
 class DatabaseManager:
@@ -20,10 +27,15 @@ class DatabaseManager:
 
     def initialize(self) -> None:
         """Create database and tables if they don't exist."""
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.engine = create_engine(f"sqlite:///{self.db_path}", echo=False)
-        Base.metadata.create_all(self.engine)
-        self._Session = sessionmaker(bind=self.engine)
+        try:
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            self.engine = create_engine(f"sqlite:///{self.db_path}", echo=False)
+            Base.metadata.create_all(self.engine)
+            self._Session = sessionmaker(bind=self.engine)
+            logger.info(f"Database initialized at {self.db_path}")
+        except Exception as e:
+            logger.error(f"Failed to initialize database: {e}")
+            raise DatabaseError(f"データベースの初期化に失敗しました: {e}")
 
     def session(self) -> Session:
         return self._Session()
@@ -38,21 +50,26 @@ class DatabaseManager:
         attributes: dict[str, str] | None = None,
     ) -> Person:
         """Add a new person with optional dynamic attributes."""
-        with self.session() as s:
-            person = Person(
-                name=name.strip(),
-                death_date=death_date,
-                source_file_path=source_file_path,
-            )
-            if attributes:
-                for col_name, value in attributes.items():
-                    person.attributes.append(
-                        Attribute(column_name=col_name, value=value)
-                    )
-            s.add(person)
-            s.commit()
-            s.refresh(person)
-            return person
+        try:
+            with self.session() as s:
+                person = Person(
+                    name=name.strip(),
+                    death_date=death_date,
+                    source_file_path=source_file_path,
+                )
+                if attributes:
+                    for col_name, value in attributes.items():
+                        person.attributes.append(
+                            Attribute(column_name=col_name, value=value)
+                        )
+                s.add(person)
+                s.commit()
+                s.refresh(person)
+                logger.info(f"Added person: {name} (ID: {person.id})")
+                return person
+        except SQLAlchemyError as e:
+            logger.error(f"Failed to add person {name}: {e}")
+            raise DatabaseError(f"データの追加に失敗しました: {e}")
 
     def update_person(
         self,
@@ -63,37 +80,47 @@ class DatabaseManager:
         attributes: dict[str, str] | None = None,
     ) -> Person | None:
         """Update an existing person. Pass attributes dict to replace all dynamic attributes."""
-        with self.session() as s:
-            person = s.get(Person, person_id)
-            if person is None:
-                return None
-            if name is not None:
-                person.name = name.strip()
-            if death_date is not None:
-                person.death_date = death_date
-            if source_file_path is not ...:
-                person.source_file_path = source_file_path
-            person.updated_at = datetime.datetime.now()
-            if attributes is not None:
-                # Replace all attributes
-                person.attributes.clear()
-                for col_name, value in attributes.items():
-                    person.attributes.append(
-                        Attribute(column_name=col_name, value=value)
-                    )
-            s.commit()
-            s.refresh(person)
-            return person
+        try:
+            with self.session() as s:
+                person = s.get(Person, person_id)
+                if person is None:
+                    return None
+                if name is not None:
+                    person.name = name.strip()
+                if death_date is not None:
+                    person.death_date = death_date
+                if source_file_path is not ...:
+                    person.source_file_path = source_file_path
+                person.updated_at = datetime.datetime.now()
+                if attributes is not None:
+                    # Replace all attributes
+                    person.attributes.clear()
+                    for col_name, value in attributes.items():
+                        person.attributes.append(
+                            Attribute(column_name=col_name, value=value)
+                        )
+                s.commit()
+                s.refresh(person)
+                logger.info(f"Updated person ID: {person_id}")
+                return person
+        except SQLAlchemyError as e:
+            logger.error(f"Failed to update person ID {person_id}: {e}")
+            raise DatabaseError(f"データの更新に失敗しました: {e}")
 
     def delete_person(self, person_id: int) -> bool:
         """Delete a person and all their attributes."""
-        with self.session() as s:
-            person = s.get(Person, person_id)
-            if person is None:
-                return False
-            s.delete(person)
-            s.commit()
-            return True
+        try:
+            with self.session() as s:
+                person = s.get(Person, person_id)
+                if person is None:
+                    return False
+                s.delete(person)
+                s.commit()
+                logger.info(f"Deleted person ID: {person_id}")
+                return True
+        except SQLAlchemyError as e:
+            logger.error(f"Failed to delete person ID {person_id}: {e}")
+            raise DatabaseError(f"データの削除に失敗しました: {e}")
 
     def get_person(self, person_id: int) -> Person | None:
         with self.session() as s:
@@ -159,21 +186,26 @@ class DatabaseManager:
 
     def backup(self) -> tuple[Path, Path]:
         """Create backup: SQLite copy + JSON export. Returns (db_backup_path, json_backup_path)."""
-        BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        try:
+            BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+            ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        # SQLite file copy
-        db_backup = BACKUP_DIR / f"memorial_{ts}.db"
-        shutil.copy2(self.db_path, db_backup)
+            # SQLite file copy
+            db_backup = BACKUP_DIR / f"memorial_{ts}.db"
+            shutil.copy2(self.db_path, db_backup)
 
-        # JSON export
-        json_backup = BACKUP_DIR / f"memorial_{ts}.json"
-        data = self._export_all_json()
-        json_backup.write_text(
-            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+            # JSON export
+            json_backup = BACKUP_DIR / f"memorial_{ts}.json"
+            data = self._export_all_json()
+            json_backup.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
 
-        return db_backup, json_backup
+            logger.info(f"Backup created: {db_backup}")
+            return db_backup, json_backup
+        except Exception as e:
+            logger.error(f"Backup failed: {e}")
+            raise DatabaseError(f"バックアップの作成に失敗しました: {e}")
 
     def _export_all_json(self) -> list[dict]:
         """Export all records as JSON-serializable list."""
@@ -195,32 +227,42 @@ class DatabaseManager:
 
     def restore_from_json(self, json_path: Path) -> int:
         """Restore database from JSON backup. Returns number of records restored."""
-        data = json.loads(json_path.read_text(encoding="utf-8"))
-        count = 0
-        with self.session() as s:
-            for rec in data:
-                person = Person(
-                    name=rec["name"],
-                    death_date=rec["death_date"],
-                    source_file_path=rec.get("source_file_path"),
-                )
-                attrs = rec.get("attributes", {})
-                for col_name, value in attrs.items():
-                    person.attributes.append(
-                        Attribute(column_name=col_name, value=value)
+        try:
+            data = json.loads(json_path.read_text(encoding="utf-8"))
+            count = 0
+            with self.session() as s:
+                for rec in data:
+                    person = Person(
+                        name=rec["name"],
+                        death_date=rec["death_date"],
+                        source_file_path=rec.get("source_file_path"),
                     )
-                s.add(person)
-                count += 1
-            s.commit()
-        return count
+                    attrs = rec.get("attributes", {})
+                    for col_name, value in attrs.items():
+                        person.attributes.append(
+                            Attribute(column_name=col_name, value=value)
+                        )
+                    s.add(person)
+                    count += 1
+                s.commit()
+            logger.info(f"Restored {count} records from {json_path}")
+            return count
+        except Exception as e:
+            logger.error(f"Restore failed: {e}")
+            raise DatabaseError(f"復元に失敗しました: {e}")
 
     # --- Database Reset ---
 
     def reset_database(self) -> None:
         """Drop all tables and recreate. Creates backup first."""
-        self.backup()
-        Base.metadata.drop_all(self.engine)
-        Base.metadata.create_all(self.engine)
+        try:
+            self.backup()
+            Base.metadata.drop_all(self.engine)
+            Base.metadata.create_all(self.engine)
+            logger.info("Database reset complete")
+        except Exception as e:
+            logger.error(f"Database reset failed: {e}")
+            raise DatabaseError(f"データベースのリセットに失敗しました: {e}")
 
     # --- Batch Import Support ---
 
@@ -228,19 +270,24 @@ class DatabaseManager:
         """Bulk insert persons. Each record: {name, death_date, source_file_path?, attributes?}.
         Returns count of inserted records.
         """
-        with self.session() as s:
-            count = 0
-            for rec in records:
-                person = Person(
-                    name=rec["name"].strip(),
-                    death_date=rec["death_date"],
-                    source_file_path=rec.get("source_file_path"),
-                )
-                for col_name, value in rec.get("attributes", {}).items():
-                    person.attributes.append(
-                        Attribute(column_name=col_name, value=value)
+        try:
+            with self.session() as s:
+                count = 0
+                for rec in records:
+                    person = Person(
+                        name=rec["name"].strip(),
+                        death_date=rec["death_date"],
+                        source_file_path=rec.get("source_file_path"),
                     )
-                s.add(person)
-                count += 1
-            s.commit()
-            return count
+                    for col_name, value in rec.get("attributes", {}).items():
+                        person.attributes.append(
+                            Attribute(column_name=col_name, value=value)
+                        )
+                    s.add(person)
+                    count += 1
+                s.commit()
+                logger.info(f"Batch added {count} persons")
+                return count
+        except SQLAlchemyError as e:
+            logger.error(f"Batch import failed: {e}")
+            raise DatabaseError(f"一括インポートに失敗しました: {e}")

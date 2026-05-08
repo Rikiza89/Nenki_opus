@@ -171,7 +171,7 @@ def _parse_romanized_era(text: str) -> ParsedDate | None:
 def _parse_gregorian(text: str) -> ParsedDate | None:
     """Parse Gregorian: YYYY-MM-DD, YYYY/MM/DD, YYYYMMDD, YYYY.MM.DD."""
     # YYYY-MM-DD / YYYY/MM/DD / YYYY.MM.DD
-    m = re.search(r"(\d{4})[/\-.](\d{1,2})[/\-.](\d{1,2})", text)
+    m = re.search(r"(\d{4})[/\-.\s](\d{1,2})[/\-.\s](\d{1,2})", text)
     if m:
         try:
             d = datetime.date(int(m.group(1)), int(m.group(2)), int(m.group(3)))

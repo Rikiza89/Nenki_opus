@@ -19,9 +19,10 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QDate
 
-from memorial_app.database.db_manager import DatabaseManager
+from memorial_app.database.db_manager import DatabaseManager, DatabaseError
 from memorial_app.core.japanese_date_parser import parse_date, DateValidationError
 from memorial_app.core.era_converter import format_date_era
+from memorial_app.core.logger import logger
 
 
 class EditDialog(QDialog):
@@ -204,19 +205,25 @@ class EditDialog(QDialog):
 
         death_date_iso = parsed.date.isoformat()
 
-        if self.is_edit:
-            person = self.db.update_person(
-                self.person_id,
-                name=name,
-                death_date=death_date_iso,
-                attributes=attributes,
-            )
-            if person and person.source_file_path:
-                self._sync_excel(person)
-        else:
-            self.db.add_person(name, death_date_iso, attributes=attributes)
-
-        self.accept()
+        try:
+            if self.is_edit:
+                person = self.db.update_person(
+                    self.person_id,
+                    name=name,
+                    death_date=death_date_iso,
+                    attributes=attributes,
+                )
+                if person and person.source_file_path:
+                    self._sync_excel(person)
+            else:
+                self.db.add_person(name, death_date_iso, attributes=attributes)
+            self.accept()
+        except DatabaseError as e:
+            logger.error(f"Save failed in EditDialog: {e}")
+            QMessageBox.critical(self, "保存エラー", str(e))
+        except Exception as e:
+            logger.error(f"Unexpected error in EditDialog: {e}")
+            QMessageBox.critical(self, "エラー", f"予期せぬエラーが発生しました: {e}")
 
     def _sync_excel(self, person):
         """Sync edited data back to the original Excel file."""
@@ -225,49 +232,78 @@ class EditDialog(QDialog):
             return
         path = Path(source)
         if not path.exists():
+            logger.warning(f"Excel sync skipped: File not found at {path}")
             return
 
         try:
             import openpyxl
+            from openpyxl.utils.exceptions import InvalidFileException
 
-            wb = openpyxl.load_workbook(path)
+            try:
+                wb = openpyxl.load_workbook(path)
+            except (PermissionError, IOError):
+                logger.error(f"Excel sync failed: File {path} is locked or inaccessible")
+                QMessageBox.warning(
+                    self,
+                    "Excel同期エラー",
+                    "元のExcelファイルが開かれているか、アクセス権限がありません。\n同期をスキップします。",
+                )
+                return
+            except InvalidFileException:
+                logger.error(f"Excel sync failed: File {path} is not a valid Excel file")
+                return
+
             ws = wb.active
 
             # Find matching row by name in first data column
             header_row = list(ws.iter_rows(min_row=1, max_row=1, values_only=True))[0]
+            if not header_row:
+                return
+
+            # Identify columns
             name_col_idx = None
+            date_col_idx = None
+            attr_col_indices = {}
+
             for i, h in enumerate(header_row):
-                if h and person.name in str(h):
+                if h is None:
+                    continue
+                h_str = str(h).strip()
+                if name_col_idx is None and h_str in ("氏名", "名前", "俗名"):
                     name_col_idx = i
-                    break
+                if date_col_idx is None and h_str in ("没年月日", "命日", "死亡日", "逝去日", "往生日"):
+                    date_col_idx = i
+
+                for attr in person.attributes:
+                    if h_str == attr.column_name:
+                        attr_col_indices[attr.column_name] = i
 
             if name_col_idx is not None:
+                found = False
                 for row in ws.iter_rows(min_row=2):
-                    cell_val = str(row[name_col_idx].value or "")
-                    if cell_val.strip() == person.name:
-                        # Update death_date column if found
-                        for i, h in enumerate(header_row):
-                            h_str = str(h or "")
-                            if h_str in (
-                                "没年月日",
-                                "命日",
-                                "死亡日",
-                                "逝去日",
-                                "往生日",
-                            ):
-                                row[i].value = person.death_date
-                        # Update attribute columns
+                    cell_val = str(row[name_col_idx].value or "").strip()
+                    if cell_val == person.name:
+                        # Update death_date
+                        if date_col_idx is not None:
+                            row[date_col_idx].value = person.death_date
+
+                        # Update attributes
                         for attr in person.attributes:
-                            for i, h in enumerate(header_row):
-                                if str(h or "") == attr.column_name:
-                                    row[i].value = attr.value
+                            if attr.column_name in attr_col_indices:
+                                row[attr_col_indices[attr.column_name]].value = attr.value
+                        found = True
                         break
 
-                wb.save(path)
-                QMessageBox.information(
-                    self, "Excel同期", "元のExcelファイルも更新しました。"
-                )
+                if found:
+                    wb.save(path)
+                    logger.info(f"Excel sync complete for {person.name} in {path}")
+                    QMessageBox.information(
+                        self, "Excel同期", "元のExcelファイルも更新しました。"
+                    )
+                else:
+                    logger.warning(f"Excel sync: Person {person.name} not found in {path}")
         except Exception as e:
+            logger.error(f"Excel sync error: {e}")
             QMessageBox.warning(
                 self, "Excel同期エラー", f"Excelファイルの更新に失敗しました:\n{e}"
             )
