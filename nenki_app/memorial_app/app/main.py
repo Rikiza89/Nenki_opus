@@ -13,6 +13,7 @@ from PySide6.QtWidgets import QApplication
 from memorial_app.core.app_paths import ensure_dirs, EXAMPLE_FILE
 from memorial_app.database.db_manager import DatabaseManager
 from memorial_app.ui.main_window import MainWindow
+from memorial_app.core.logger import logger
 
 
 def _generate_example_excel():
@@ -28,25 +29,33 @@ def _generate_example_excel():
 
 
 def main():
+    logger.info("Application starting...")
     app = QApplication(sys.argv)
     app.setApplicationName("年忌管理")
     app.setOrganizationName("寺院管理システム")
 
-    # Create all data directories
-    ensure_dirs()
+    try:
+        # Create all data directories
+        ensure_dirs()
 
-    # Initialize database
-    db_manager = DatabaseManager()
-    db_manager.initialize()
+        # Initialize database
+        db_manager = DatabaseManager()
+        db_manager.initialize()
 
-    # Generate example data on first run
-    _generate_example_excel()
+        # Generate example data on first run
+        _generate_example_excel()
 
-    # Create and show main window
-    window = MainWindow(db_manager)
-    window.show()
+        # Create and show main window
+        window = MainWindow(db_manager)
+        window.show()
 
-    sys.exit(app.exec())
+        logger.info("Main window shown")
+        sys.exit(app.exec())
+    except Exception as e:
+        logger.critical(f"Unhandled exception in main: {e}", exc_info=True)
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.critical(None, "致命的なエラー", f"アプリケーションの起動に失敗しました:\n{e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

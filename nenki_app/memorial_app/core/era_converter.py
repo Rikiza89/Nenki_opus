@@ -105,13 +105,21 @@ def gregorian_to_era(date: datetime.date) -> tuple[Era, int]:
     Raises:
         ValueError: if date is before 明治 start and no custom era covers it.
     """
-    for era in get_eras():
+    eras = get_eras()
+    for era in eras:
         if date >= era.start_date:
             # Era year = gregorian_year - start_year + 1
             # In the start year, only dates >= start_date belong to this era (元年)
             # From the next year onward, all dates belong to this era
             year = date.year - era.start_date.year + 1
             return era, year
+
+    if eras:
+        # Fallback to the oldest known era if date is earlier
+        oldest = eras[-1]
+        year = date.year - oldest.start_date.year + 1
+        return oldest, year
+
     raise ValueError(f"日付 {date.isoformat()} に該当する元号がありません")
 
 

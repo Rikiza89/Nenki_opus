@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex, Signal
 from PySide6.QtGui import QFont
 
-from memorial_app.database.db_manager import DatabaseManager
+from memorial_app.database.db_manager import DatabaseManager, DatabaseError
 from memorial_app.database.models import Person
 from memorial_app.core.era_converter import format_date_era
 from memorial_app.ui.edit_dialog import EditDialog
@@ -226,8 +226,11 @@ class PeopleTablePage(QWidget):
                 QMessageBox.Yes | QMessageBox.No,
             )
             if reply == QMessageBox.Yes:
-                self.db.delete_person(person.id)
-                self.refresh()
+                try:
+                    self.db.delete_person(person.id)
+                    self.refresh()
+                except DatabaseError as e:
+                    QMessageBox.critical(self, "削除エラー", str(e))
 
     def _on_double_click(self, index: QModelIndex):
         person = self.model.get_person(index.row())

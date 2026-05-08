@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QThread, Signal
 
-from memorial_app.database.db_manager import DatabaseManager
+from memorial_app.database.db_manager import DatabaseManager, DatabaseError
 from memorial_app.importer.excel_importer import (
     read_file,
     get_sheet_info,
@@ -1051,12 +1051,21 @@ class ImportPage(QWidget):
             self.result_label.setStyleSheet(
                 "color: #27ae60; font-size: 16px; padding: 16px;"
             )
+        except DatabaseError as e:
+            self.result_icon.setText("NG")
+            self.result_icon.setStyleSheet(
+                "font-size: 48px; padding: 16px; color: #e74c3c;"
+            )
+            self.result_label.setText(f"データベースエラーによりインポートに失敗しました\n\n{e}")
+            self.result_label.setStyleSheet(
+                "color: #e74c3c; font-size: 16px; padding: 16px;"
+            )
         except Exception as e:
             self.result_icon.setText("NG")
             self.result_icon.setStyleSheet(
                 "font-size: 48px; padding: 16px; color: #e74c3c;"
             )
-            self.result_label.setText(f"インポートに失敗しました\n\n{e}")
+            self.result_label.setText(f"予期せぬエラーによりインポートに失敗しました\n\n{e}")
             self.result_label.setStyleSheet(
                 "color: #e74c3c; font-size: 16px; padding: 16px;"
             )
