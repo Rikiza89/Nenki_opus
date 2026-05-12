@@ -8,10 +8,10 @@ _project_root = Path(__file__).resolve().parent.parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 from memorial_app.core.app_paths import ensure_dirs, EXAMPLE_FILE
-from memorial_app.database.db_manager import DatabaseManager
+from memorial_app.database.db_manager import DatabaseManager, DatabaseError
 from memorial_app.ui.main_window import MainWindow
 
 
@@ -24,6 +24,7 @@ def _generate_example_excel():
 
         generate_example(EXAMPLE_FILE)
     except Exception:
+        # Example data is a convenience, not required for the app to work.
         pass
 
 
@@ -32,17 +33,25 @@ def main():
     app.setApplicationName("年忌管理")
     app.setOrganizationName("寺院管理システム")
 
-    # Create all data directories
-    ensure_dirs()
+    try:
+        ensure_dirs()
+    except OSError as e:
+        QMessageBox.critical(
+            None,
+            "起動エラー",
+            f"データディレクトリの作成に失敗しました:\n{e}",
+        )
+        sys.exit(1)
 
-    # Initialize database
     db_manager = DatabaseManager()
-    db_manager.initialize()
+    try:
+        db_manager.initialize()
+    except DatabaseError as e:
+        QMessageBox.critical(None, "起動エラー", str(e))
+        sys.exit(1)
 
-    # Generate example data on first run
     _generate_example_excel()
 
-    # Create and show main window
     window = MainWindow(db_manager)
     window.show()
 

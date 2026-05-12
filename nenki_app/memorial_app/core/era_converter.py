@@ -127,11 +127,13 @@ def era_to_gregorian(
         day: Day (1-31)
 
     Raises:
-        ValueError: if era not found or date invalid.
+        ValueError: if era not found, year not a positive integer, or date invalid.
     """
     era = find_era(era_name)
     if era is None:
         raise ValueError(f"不明な元号: {era_name}")
+    if not isinstance(era_year, int) or era_year < 1:
+        raise ValueError(f"元号の年は1以上の整数である必要があります: {era_year}")
     gregorian_year = era.start_date.year + era_year - 1
     try:
         return datetime.date(gregorian_year, month, day)
@@ -141,10 +143,15 @@ def era_to_gregorian(
 
 def find_era(name_or_abbr: str) -> Era | None:
     """Find era by name, abbreviation, or romanized reading (case-insensitive)."""
-    key = name_or_abbr.strip()
+    if not name_or_abbr:
+        return None
+    key = str(name_or_abbr).strip()
+    if not key:
+        return None
+    key_upper = key.upper()
     key_lower = key.lower()
     for era in get_eras():
-        if key == era.name or key.upper() == era.abbreviation:
+        if key == era.name or key_upper == era.abbreviation.upper():
             return era
         if era.reading and key_lower == era.reading.lower():
             return era

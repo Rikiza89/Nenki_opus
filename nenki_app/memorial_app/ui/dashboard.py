@@ -87,39 +87,52 @@ class DashboardPage(QWidget):
         layout.addStretch()
 
     def refresh(self):
-        total = self.db.get_person_count()
+        from memorial_app.database.db_manager import DatabaseError
+
+        try:
+            total = self.db.get_person_count()
+        except DatabaseError as e:
+            self.total_card.set_value("?")
+            self.upcoming_list.setText(f"件数取得エラー: {e}")
+            return
         self.total_card.set_value(str(total))
 
-        # Calculate upcoming anniversaries
         today = datetime.date.today()
         this_year = today.year
         upcoming_count = 0
         this_year_count = 0
         upcoming_items = []
 
-        _DASHBOARD_LIMIT = 500
-        persons = self.db.get_all_persons(offset=0, limit=_DASHBOARD_LIMIT)
-        for person in persons:
+        from memorial_app.core.nenki_calculator import (
+            get_anniversaries_for_year,
+            get_upcoming_anniversaries,
+        )
+
+        # Iterate the whole DB in chunks so even large datasets are summarised correctly.
+        offset = 0
+        page = 1000
+        while True:
             try:
-                death_date = person.death_date_obj
-            except (ValueError, TypeError):
-                continue
-
-            from memorial_app.core.nenki_calculator import (
-                get_anniversaries_for_year,
-                get_upcoming_anniversaries,
-            )
-
-            year_anns = get_anniversaries_for_year(death_date, this_year)
-            this_year_count += len(year_anns)
-
-            upcoming = get_upcoming_anniversaries(
-                death_date, months_ahead=12, from_date=today
-            )
-            upcoming_count += len(upcoming)
-
-            for ann in upcoming[:3]:  # Show first few per person
-                upcoming_items.append((ann.date, ann.name, person.name))
+                chunk = self.db.get_all_persons(offset=offset, limit=page)
+            except DatabaseError:
+                break
+            if not chunk:
+                break
+            for person in chunk:
+                death_date = person.safe_death_date
+                if death_date is None:
+                    continue
+                year_anns = get_anniversaries_for_year(death_date, this_year)
+                this_year_count += len(year_anns)
+                upcoming = get_upcoming_anniversaries(
+                    death_date, months_ahead=12, from_date=today
+                )
+                upcoming_count += len(upcoming)
+                for ann in upcoming[:3]:
+                    upcoming_items.append((ann.date, ann.name, person.name))
+            offset += len(chunk)
+            if len(chunk) < page:
+                break
 
         self.upcoming_card.set_value(str(upcoming_count))
         self.this_year_card.set_value(str(this_year_count))
