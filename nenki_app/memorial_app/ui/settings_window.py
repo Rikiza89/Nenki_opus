@@ -10,21 +10,57 @@ from PySide6.QtWidgets import (
     QPushButton,
     QGroupBox,
     QFormLayout,
-    QComboBox,
     QMessageBox,
     QFileDialog,
     QLineEdit,
     QDateEdit,
     QTableWidget,
     QTableWidgetItem,
-    QHeaderView,
+    QInputDialog,
+    QDialog,
+    QDialogButtonBox,
+    QRadioButton,
+    QButtonGroup,
 )
 from PySide6.QtCore import Qt, QDate
 
-from memorial_app.database.db_manager import DatabaseManager
+from memorial_app.database.db_manager import DatabaseManager, DatabaseError
 from memorial_app.core.era_converter import get_custom_eras, save_custom_eras, Era
 
 import datetime
+
+
+class _RestoreChoiceDialog(QDialog):
+    """Asks whether to merge JSON-restored data with the current DB or replace it."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("復元モードの選択")
+        layout = QVBoxLayout(self)
+        layout.addWidget(
+            QLabel(
+                "復元の方法を選択してください:\n"
+                "・追加: 既存データを残し、JSONの内容を追加します\n"
+                "・置換: 既存データを全て削除してJSONの内容で置き換えます\n"
+                "  （置換前に自動バックアップが作成されます）"
+            )
+        )
+        self._merge_rb = QRadioButton("追加（既存データを残す）")
+        self._merge_rb.setChecked(True)
+        self._replace_rb = QRadioButton("置換（既存データを削除）")
+        group = QButtonGroup(self)
+        group.addButton(self._merge_rb)
+        group.addButton(self._replace_rb)
+        layout.addWidget(self._merge_rb)
+        layout.addWidget(self._replace_rb)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def replace(self) -> bool:
+        return self._replace_rb.isChecked()
 
 
 class SettingsPage(QWidget):
@@ -58,7 +94,7 @@ class SettingsPage(QWidget):
 
         layout.addWidget(backup_group)
 
-        # Database Reset
+        # Database Reset (typed confirmation)
         reset_group = QGroupBox("データベースリセット")
         reset_layout = QHBoxLayout(reset_group)
         reset_label = QLabel(
@@ -94,6 +130,7 @@ class SettingsPage(QWidget):
         self.era_date_input = QDateEdit()
         self.era_date_input.setDisplayFormat("yyyy-MM-dd")
         self.era_date_input.setCalendarPopup(True)
+        self.era_date_input.setDate(QDate.currentDate())
         add_era_layout.addRow("開始日:", self.era_date_input)
 
         era_layout.addLayout(add_era_layout)
@@ -137,45 +174,66 @@ class SettingsPage(QWidget):
                 "バックアップ完了",
                 f"バックアップを作成しました:\n{db_path}\n{json_path}",
             )
+        except DatabaseError as e:
+            QMessageBox.critical(self, "エラー", str(e))
         except Exception as e:
             QMessageBox.critical(self, "エラー", f"バックアップに失敗しました:\n{e}")
 
     def _restore(self):
         path, _ = QFileDialog.getOpenFileName(
-            self,
-            "復元するJSONファイルを選択",
-            "",
-            "JSON (*.json)",
+            self, "復元するJSONファイルを選択", "", "JSON (*.json)"
         )
         if not path:
             return
-        reply = QMessageBox.question(
-            self,
-            "復元確認",
-            "JSONファイルからデータを復元します。\n既存データに追加されます。続行しますか？",
-        )
-        if reply != QMessageBox.Yes:
+
+        dlg = _RestoreChoiceDialog(self)
+        if dlg.exec() != QDialog.Accepted:
             return
+        replace = dlg.replace()
+
         try:
-            count = self.db.restore_from_json(Path(path))
-            QMessageBox.information(
-                self, "復元完了", f"{count}件のデータを復元しました。"
-            )
+            result = self.db.restore_from_json(Path(path), replace=replace)
+        except DatabaseError as e:
+            QMessageBox.critical(self, "エラー", str(e))
+            return
         except Exception as e:
             QMessageBox.critical(self, "エラー", f"復元に失敗しました:\n{e}")
+            return
+
+        msg = (
+            f"復元完了:\n"
+            f"  追加: {result.inserted}件\n"
+            f"  失敗: {len(result.failures)}件"
+        )
+        if result.failures:
+            preview = "\n".join(
+                f"  行{idx + 1}: {reason}" for idx, reason in result.failures[:5]
+            )
+            msg += "\n\n失敗の一部:\n" + preview
+        QMessageBox.information(self, "復元結果", msg)
 
     def _reset_db(self):
-        reply = QMessageBox.warning(
+        text, ok = QInputDialog.getText(
             self,
             "リセット確認",
-            "本当にデータベースをリセットしますか？\n全データが削除されます。\n（バックアップは自動作成されます）",
-            QMessageBox.Yes | QMessageBox.No,
+            "本当にデータベースをリセットしますか？\n"
+            "全データが削除されます（バックアップは自動作成されます）。\n\n"
+            "実行するには、半角で 'RESET' と入力して OK を押してください。",
         )
-        if reply != QMessageBox.Yes:
+        if not ok or text.strip() != "RESET":
+            QMessageBox.information(
+                self, "キャンセル", "リセットはキャンセルされました。"
+            )
             return
         try:
-            self.db.reset_database()
-            QMessageBox.information(self, "完了", "データベースをリセットしました。")
+            backup_path = self.db.reset_database()
+            QMessageBox.information(
+                self,
+                "完了",
+                f"データベースをリセットしました。\nバックアップ: {backup_path}",
+            )
+        except DatabaseError as e:
+            QMessageBox.critical(self, "エラー", str(e))
         except Exception as e:
             QMessageBox.critical(self, "エラー", f"リセットに失敗しました:\n{e}")
 
@@ -190,8 +248,23 @@ class SettingsPage(QWidget):
             return
 
         eras = get_custom_eras()
+        if any(e.name == name for e in eras):
+            QMessageBox.warning(
+                self, "重複", f"元号「{name}」は既に登録されています。"
+            )
+            return
+        if any(e.abbreviation.upper() == abbr.upper() for e in eras):
+            QMessageBox.warning(
+                self, "重複", f"略称「{abbr}」は既に登録されています。"
+            )
+            return
+
         eras.append(Era(name=name, abbreviation=abbr, start_date=start))
-        save_custom_eras(eras)
+        try:
+            save_custom_eras(eras)
+        except OSError as e:
+            QMessageBox.critical(self, "エラー", f"元号の保存に失敗しました:\n{e}")
+            return
         self._load_eras()
         self.era_name_input.clear()
         self.era_abbr_input.clear()
@@ -203,8 +276,13 @@ class SettingsPage(QWidget):
             QMessageBox.information(self, "情報", "削除する元号を選択してください。")
             return
         eras = get_custom_eras()
-        if row < len(eras):
-            era = eras.pop(row)
+        if row >= len(eras):
+            return
+        era = eras.pop(row)
+        try:
             save_custom_eras(eras)
-            self._load_eras()
-            QMessageBox.information(self, "完了", f"元号「{era.name}」を削除しました。")
+        except OSError as e:
+            QMessageBox.critical(self, "エラー", f"元号の保存に失敗しました:\n{e}")
+            return
+        self._load_eras()
+        QMessageBox.information(self, "完了", f"元号「{era.name}」を削除しました。")

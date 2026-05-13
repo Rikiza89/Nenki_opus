@@ -36,6 +36,16 @@ class Person(Base):
     def death_date_obj(self) -> datetime.date:
         return datetime.date.fromisoformat(self.death_date)
 
+    @property
+    def safe_death_date(self) -> datetime.date | None:
+        """Return parsed death_date or None if the stored value is malformed."""
+        if not self.death_date:
+            return None
+        try:
+            return datetime.date.fromisoformat(self.death_date)
+        except (ValueError, TypeError):
+            return None
+
     def __repr__(self):
         return f"<Person(id={self.id}, name='{self.name}', death_date='{self.death_date}')>"
 

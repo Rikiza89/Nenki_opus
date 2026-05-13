@@ -1,4 +1,6 @@
-"""Data import page - Excel/CSV file import with multi-step validation and user checkpoints."""
+"""Data import page - Excel/CSV file import with multi-step validation,
+in-UI error correction and a checkpoint at every stage.
+"""
 
 from pathlib import Path
 
@@ -19,20 +21,24 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QStackedWidget,
     QFrame,
-    QSizePolicy,
     QAbstractItemView,
     QListWidget,
     QListWidgetItem,
     QScrollArea,
+    QDialog,
+    QDialogButtonBox,
+    QButtonGroup,
+    QRadioButton,
 )
 from PySide6.QtCore import Qt, QThread, Signal
 
-from memorial_app.database.db_manager import DatabaseManager
+from memorial_app.database.db_manager import DatabaseManager, DatabaseError
 from memorial_app.importer.excel_importer import (
     read_file,
     get_sheet_info,
     auto_detect_mapping,
     ColumnMapping,
+    FileReadError,
 )
 from memorial_app.importer.validation_pipeline import (
     ValidationPipeline,
@@ -42,12 +48,11 @@ from memorial_app.importer.validation_pipeline import (
     import_validated_rows,
     export_error_rows,
 )
-from memorial_app.core.era_converter import format_date_era
 
 
 class ImportWorker(QThread):
     progress = Signal(int, int)
-    finished = Signal(object)
+    result_ready = Signal(object)  # renamed: avoids shadowing QThread.finished
     error = Signal(str)
 
     def __init__(self, db, df, mapping, source_path):
@@ -63,9 +68,107 @@ class ImportWorker(QThread):
             result = pipeline.validate(
                 self.df, progress_callback=lambda c, t: self.progress.emit(c, t)
             )
-            self.finished.emit(result)
+            self.result_ready.emit(result)
         except Exception as e:
             self.error.emit(str(e))
+
+
+class DuplicateResolutionDialog(QDialog):
+    """Lets the user resolve every duplicate-against-DB row at once, with the
+    decisions applied atomically only when the user runs the import. Nothing
+    is written to the DB from this dialog itself.
+    """
+
+    def __init__(self, duplicate_rows: list[ValidatedRow], parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("重複データの処理")
+        self.setMinimumWidth(700)
+        self.setMinimumHeight(450)
+        self._duplicates = duplicate_rows
+        self._choices: dict[int, str] = {
+            i: "overwrite" for i in range(len(duplicate_rows))
+        }
+
+        layout = QVBoxLayout(self)
+        info = QLabel(
+            f"既存データと一致する {len(duplicate_rows)} 件のレコードがあります。\n"
+            "各行について処理方法を選んでください。"
+        )
+        info.setWordWrap(True)
+        info.setStyleSheet("font-size: 13px; color: #2c3e50; padding: 4px;")
+        layout.addWidget(info)
+
+        # Bulk actions
+        bulk = QHBoxLayout()
+        bulk.addWidget(QLabel("一括設定:"))
+        for label, action in (
+            ("全て上書き", "overwrite"),
+            ("全て新規追加", "insert"),
+            ("全てスキップ", "skip"),
+        ):
+            btn = QPushButton(label)
+            btn.clicked.connect(lambda _checked=False, a=action: self._set_all(a))
+            bulk.addWidget(btn)
+        bulk.addStretch()
+        layout.addLayout(bulk)
+
+        # Per-row choices
+        self.table = QTableWidget()
+        self.table.setColumnCount(5)
+        self.table.setHorizontalHeaderLabels(
+            ["氏名", "没年月日", "上書き", "新規追加", "スキップ"]
+        )
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.setRowCount(len(duplicate_rows))
+        self._row_groups: list[QButtonGroup] = []
+
+        for i, row in enumerate(duplicate_rows):
+            self.table.setItem(i, 0, QTableWidgetItem(row.name))
+            self.table.setItem(i, 1, QTableWidgetItem(row.era_display))
+            group = QButtonGroup(self)
+            for col, action in ((2, "overwrite"), (3, "insert"), (4, "skip")):
+                rb = QRadioButton()
+                rb.setChecked(action == "overwrite")
+                rb.toggled.connect(
+                    lambda checked, idx=i, a=action: self._on_choice(idx, a, checked)
+                )
+                group.addButton(rb)
+                container = QWidget()
+                lay = QHBoxLayout(container)
+                lay.setContentsMargins(0, 0, 0, 0)
+                lay.addStretch()
+                lay.addWidget(rb)
+                lay.addStretch()
+                self.table.setCellWidget(i, col, container)
+            self._row_groups.append(group)
+        self.table.resizeColumnsToContents()
+        layout.addWidget(self.table)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.button(QDialogButtonBox.Ok).setText("確定")
+        buttons.button(QDialogButtonBox.Cancel).setText("キャンセル")
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _set_all(self, action: str):
+        col_for_action = {"overwrite": 2, "insert": 3, "skip": 4}[action]
+        for i in range(self.table.rowCount()):
+            container = self.table.cellWidget(i, col_for_action)
+            rb = container.findChild(QRadioButton)
+            if rb:
+                rb.setChecked(True)
+            self._choices[i] = action
+
+    def _on_choice(self, idx: int, action: str, checked: bool):
+        if checked:
+            self._choices[idx] = action
+
+    def apply_to(self, duplicate_rows: list[ValidatedRow]):
+        """Stamp the user's choices onto the ValidatedRow objects in-place."""
+        for i, row in enumerate(duplicate_rows):
+            row.duplicate_action = self._choices.get(i, "overwrite")
 
 
 class ImportPage(QWidget):
@@ -76,8 +179,8 @@ class ImportPage(QWidget):
         2. Column mapping (name, date, buddhist_name)
         3. Extra column remapping (map to existing DB columns or import as-is)
         4. Data preview
-        5. Validation
-        6. Import confirmation
+        5. Validation + inline error correction
+        6. Import confirmation (with duplicate resolution)
         7. Result
     """
 
@@ -86,7 +189,7 @@ class ImportPage(QWidget):
         "ステップ 2/7: 基本列マッピング",
         "ステップ 3/7: 追加列の統合設定",
         "ステップ 4/7: データプレビュー",
-        "ステップ 5/7: データ検証",
+        "ステップ 5/7: データ検証・修正",
         "ステップ 6/7: インポート確認",
         "ステップ 7/7: 完了",
     ]
@@ -94,13 +197,15 @@ class ImportPage(QWidget):
     def __init__(self, db_manager: DatabaseManager):
         super().__init__()
         self.db = db_manager
-        self.sheets = None
+        self.sheets: dict | None = None
         self.current_df = None
-        self.mapping = None
-        self.source_path = None
-        self._worker = None
-        self._validation_result = None
-        self._remap_combos: dict[str, QComboBox] = {}  # excel_col -> combo
+        self.mapping: ColumnMapping | None = None
+        self.source_path: str | None = None
+        self._worker: ImportWorker | None = None
+        self._orphaned_workers: list[ImportWorker] = []
+        self._mapping_signals_connected = False
+        self._validation_result: ValidationResult | None = None
+        self._remap_combos: dict[str, QComboBox] = {}
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -109,7 +214,6 @@ class ImportPage(QWidget):
         header.setStyleSheet("font-size: 24px; font-weight: bold; color: #2c3e50;")
         layout.addWidget(header)
 
-        # Step indicator
         self.step_label = QLabel("")
         self.step_label.setStyleSheet(
             "font-size: 13px; color: #3498db; font-weight: bold; "
@@ -117,7 +221,6 @@ class ImportPage(QWidget):
         )
         layout.addWidget(self.step_label)
 
-        # Stacked widget for wizard steps
         self.steps = QStackedWidget()
         layout.addWidget(self.steps)
 
@@ -137,7 +240,6 @@ class ImportPage(QWidget):
         page = QWidget()
         layout = QVBoxLayout(page)
 
-        # File selection
         file_group = QGroupBox("ファイルを選択してください")
         file_layout = QHBoxLayout(file_group)
         self.file_label = QLabel("ファイルが選択されていません")
@@ -149,29 +251,23 @@ class ImportPage(QWidget):
         file_layout.addWidget(browse_btn)
         layout.addWidget(file_group)
 
-        # Sheet selection (visible when multi-sheet)
         self.sheet_group = QGroupBox("シートを選択してください")
         sheet_layout = QVBoxLayout(self.sheet_group)
-
         self.sheet_hint = QLabel(
             "このファイルには複数のシートがあります。インポートするシートを選んでください。"
         )
         self.sheet_hint.setStyleSheet("color: #2c3e50; font-size: 12px;")
         self.sheet_hint.setWordWrap(True)
         sheet_layout.addWidget(self.sheet_hint)
-
         self.sheet_list = QListWidget()
         self.sheet_list.currentRowChanged.connect(self._on_sheet_selected)
         sheet_layout.addWidget(self.sheet_list)
-
         self.sheet_detail_label = QLabel("")
         self.sheet_detail_label.setStyleSheet("color: #7f8c8d; font-size: 12px;")
         sheet_layout.addWidget(self.sheet_detail_label)
-
         layout.addWidget(self.sheet_group)
         self.sheet_group.setVisible(False)
 
-        # Single-sheet info (visible when only one sheet)
         self.single_sheet_label = QLabel("")
         self.single_sheet_label.setStyleSheet(
             "color: #27ae60; font-size: 13px; padding: 8px; "
@@ -180,7 +276,6 @@ class ImportPage(QWidget):
         self.single_sheet_label.setVisible(False)
         layout.addWidget(self.single_sheet_label)
 
-        # Navigation
         nav = QHBoxLayout()
         nav.addStretch()
         self.step1_next = QPushButton("次へ: 列マッピング →")
@@ -223,7 +318,6 @@ class ImportPage(QWidget):
         mapping_layout.addRow("法名列:", self.buddhist_combo)
         layout.addWidget(mapping_group)
 
-        # Column preview: show first few rows of mapped columns
         preview_group = QGroupBox("マッピング結果プレビュー（先頭5行）")
         preview_layout = QVBoxLayout(preview_group)
         self.mapping_preview_table = QTableWidget()
@@ -233,7 +327,6 @@ class ImportPage(QWidget):
         preview_layout.addWidget(self.mapping_preview_table)
         layout.addWidget(preview_group)
 
-        # Navigation
         nav = QHBoxLayout()
         back_btn = QPushButton("← 戻る")
         back_btn.setStyleSheet("padding: 8px 16px;")
@@ -271,7 +364,6 @@ class ImportPage(QWidget):
         self.remap_hint.setWordWrap(True)
         layout.addWidget(self.remap_hint)
 
-        # Scrollable area for column remap combos
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         self.remap_container = QWidget()
@@ -280,7 +372,6 @@ class ImportPage(QWidget):
         scroll.setWidget(self.remap_container)
         layout.addWidget(scroll)
 
-        # Sample data preview for remap context
         self.remap_preview_group = QGroupBox("データサンプル（先頭3行）")
         remap_preview_layout = QVBoxLayout(self.remap_preview_group)
         self.remap_preview_table = QTableWidget()
@@ -290,7 +381,6 @@ class ImportPage(QWidget):
         remap_preview_layout.addWidget(self.remap_preview_table)
         layout.addWidget(self.remap_preview_group)
 
-        # Navigation
         nav = QHBoxLayout()
         back_btn = QPushButton("← 戻る")
         back_btn.setStyleSheet("padding: 8px 16px;")
@@ -333,7 +423,7 @@ class ImportPage(QWidget):
         nav = QHBoxLayout()
         back_btn = QPushButton("← 戻る")
         back_btn.setStyleSheet("padding: 8px 16px;")
-        back_btn.clicked.connect(lambda: self._go_to_step(2))
+        back_btn.clicked.connect(self._step4_back)
         nav.addWidget(back_btn)
         nav.addStretch()
         next_btn = QPushButton("次へ: 検証実行 →")
@@ -346,7 +436,7 @@ class ImportPage(QWidget):
 
         self.steps.addWidget(page)
 
-    # ─── Step 5: Validation ───
+    # ─── Step 5: Validation + In-UI Error Editor ───
 
     def _build_step5_validation(self):
         page = QWidget()
@@ -364,27 +454,51 @@ class ImportPage(QWidget):
         self.validation_status.setStyleSheet("font-size: 13px; padding: 8px;")
         layout.addWidget(self.validation_status)
 
-        # Error table
-        error_label = QLabel("エラー行:")
+        error_label = QLabel(
+            "エラー行（セルをダブルクリックして修正できます。修正後「再検証」を押してください）:"
+        )
         error_label.setStyleSheet("font-weight: bold; margin-top: 8px;")
+        error_label.setWordWrap(True)
         layout.addWidget(error_label)
+
         self.error_table = QTableWidget()
-        self.error_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.error_table.horizontalHeader().setStretchLastSection(True)
+        self.error_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        # User can edit raw cells inline; the error column stays read-only.
+        self.error_table.setEditTriggers(
+            QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed
+        )
         layout.addWidget(self.error_table)
+
+        error_actions = QHBoxLayout()
+        self.revalidate_btn = QPushButton("修正後に再検証")
+        self.revalidate_btn.setStyleSheet(
+            "background: #16a085; color: white; padding: 6px 14px;"
+        )
+        self.revalidate_btn.clicked.connect(self._revalidate_errors)
+        self.revalidate_btn.setEnabled(False)
+        error_actions.addWidget(self.revalidate_btn)
+
+        self.export_errors_btn = QPushButton("エラー行をExcelに出力")
+        self.export_errors_btn.setStyleSheet("padding: 6px 14px;")
+        self.export_errors_btn.setEnabled(False)
+        self.export_errors_btn.clicked.connect(self._export_errors)
+        error_actions.addWidget(self.export_errors_btn)
+
+        self.delete_errors_btn = QPushButton("選択行を破棄")
+        self.delete_errors_btn.setStyleSheet("padding: 6px 14px;")
+        self.delete_errors_btn.setEnabled(False)
+        self.delete_errors_btn.clicked.connect(self._delete_selected_errors)
+        error_actions.addWidget(self.delete_errors_btn)
+
+        error_actions.addStretch()
+        layout.addLayout(error_actions)
 
         nav = QHBoxLayout()
         back_btn = QPushButton("← 戻る")
         back_btn.setStyleSheet("padding: 8px 16px;")
         back_btn.clicked.connect(lambda: self._go_to_step(3))
         nav.addWidget(back_btn)
-
-        self.export_errors_btn = QPushButton("エラー行をExcelに出力")
-        self.export_errors_btn.setStyleSheet("padding: 8px 16px;")
-        self.export_errors_btn.setEnabled(False)
-        self.export_errors_btn.clicked.connect(self._export_errors)
-        nav.addWidget(self.export_errors_btn)
-
         nav.addStretch()
         self.step5_next = QPushButton("次へ: インポート確認 →")
         self.step5_next.setStyleSheet(
@@ -415,7 +529,15 @@ class ImportPage(QWidget):
         )
         layout.addWidget(self.confirm_summary)
 
-        # Valid rows preview
+        # Duplicate resolution button (visible when duplicates exist)
+        self.dup_btn = QPushButton("重複データの処理を確認")
+        self.dup_btn.setStyleSheet(
+            "background: #f39c12; color: white; padding: 8px 16px;"
+        )
+        self.dup_btn.clicked.connect(self._open_duplicate_dialog)
+        self.dup_btn.setVisible(False)
+        layout.addWidget(self.dup_btn)
+
         valid_label = QLabel("インポート予定のデータ:")
         valid_label.setStyleSheet("font-weight: bold; margin-top: 8px;")
         layout.addWidget(valid_label)
@@ -439,7 +561,8 @@ class ImportPage(QWidget):
         nav.addWidget(cancel_btn)
         self.import_btn = QPushButton("インポート実行")
         self.import_btn.setStyleSheet(
-            "background: #27ae60; color: white; padding: 10px 24px; font-size: 14px; font-weight: bold;"
+            "background: #27ae60; color: white; padding: 10px 24px; "
+            "font-size: 14px; font-weight: bold;"
         )
         self.import_btn.clicked.connect(self._execute_import)
         nav.addWidget(self.import_btn)
@@ -463,6 +586,14 @@ class ImportPage(QWidget):
         self.result_label.setWordWrap(True)
         self.result_label.setStyleSheet("font-size: 16px; padding: 16px;")
         layout.addWidget(self.result_label)
+
+        self.failures_table = QTableWidget()
+        self.failures_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.failures_table.setColumnCount(2)
+        self.failures_table.setHorizontalHeaderLabels(["行番号", "失敗理由"])
+        self.failures_table.horizontalHeader().setStretchLastSection(True)
+        self.failures_table.setVisible(False)
+        layout.addWidget(self.failures_table)
 
         layout.addStretch()
 
@@ -489,14 +620,31 @@ class ImportPage(QWidget):
         pass
 
     def _stop_worker(self):
-        """Stop any running background worker and wait for it to finish."""
         if self._worker is not None and self._worker.isRunning():
+            try:
+                self._worker.result_ready.disconnect()
+                self._worker.error.disconnect()
+                self._worker.progress.disconnect()
+            except RuntimeError:
+                pass
             self._worker.quit()
-            self._worker.wait(3000)
+            if not self._worker.wait(3000):
+                # Thread still running after timeout — keep Python reference alive
+                # so Qt doesn't destroy the object while the thread is executing.
+                orphan = self._worker
+                self._orphaned_workers.append(orphan)
+                orphan.finished.connect(
+                    lambda w=orphan: self._orphaned_workers.remove(w)
+                    if w in self._orphaned_workers
+                    else None
+                )
         self._worker = None
 
+    def _cleanup_orphan(self, worker: "ImportWorker"):
+        if worker in self._orphaned_workers:
+            self._orphaned_workers.remove(worker)
+
     def _reset(self):
-        """Reset to step 1."""
         self._stop_worker()
         self.sheets = None
         self.current_df = None
@@ -505,24 +653,26 @@ class ImportPage(QWidget):
         self._validation_result = None
         self._remap_combos.clear()
         self.file_label.setText("ファイルが選択されていません")
+        self.file_label.setStyleSheet("color: #7f8c8d;")
         self.sheet_list.clear()
         self.sheet_group.setVisible(False)
         self.single_sheet_label.setVisible(False)
         self.step1_next.setEnabled(False)
+        self.failures_table.setVisible(False)
         self._go_to_step(0)
 
     def hideEvent(self, event):
         self._stop_worker()
         super().hideEvent(event)
 
-    # ─── Step 1 Logic: File + Sheet Selection ───
+    # ─── Step 1 Logic ───
 
     def _browse_file(self):
         path, _ = QFileDialog.getOpenFileName(
             self,
             "データファイルを選択",
             "",
-            "Excel/CSV (*.xlsx *.xls *.csv);;全てのファイル (*)",
+            "Excel/CSV (*.xlsx *.xlsm *.xls *.csv);;全てのファイル (*)",
         )
         if not path:
             return
@@ -532,37 +682,50 @@ class ImportPage(QWidget):
 
         try:
             self.sheets = read_file(Path(path))
-            infos = get_sheet_info(self.sheets)
-
-            if len(infos) == 1:
-                # Single sheet: auto-select and show info
-                self.sheet_group.setVisible(False)
-                self.current_df = self.sheets[infos[0].name]
-                self.single_sheet_label.setText(
-                    f"シート「{infos[0].name}」を読み込みました"
-                    f"（{infos[0].row_count}行 × {len(list(self.current_df.columns))}列）"
-                )
-                self.single_sheet_label.setVisible(True)
-                self.step1_next.setEnabled(True)
-            else:
-                # Multi-sheet: show sheet selection
-                self.single_sheet_label.setVisible(False)
-                self.sheet_group.setVisible(True)
-                self.sheet_list.clear()
-                for info in infos:
-                    cols = len(list(self.sheets[info.name].columns))
-                    item = QListWidgetItem(
-                        f"{info.name}　（{info.row_count}行 × {cols}列）"
-                    )
-                    item.setData(Qt.UserRole, info.name)
-                    self.sheet_list.addItem(item)
-                self.step1_next.setEnabled(False)
-                self.current_df = None
-
+        except FileReadError as e:
+            QMessageBox.critical(self, "読込エラー", str(e))
+            return
         except Exception as e:
             QMessageBox.critical(
                 self, "読込エラー", f"ファイルの読み込みに失敗しました:\n{e}"
             )
+            return
+
+        infos = get_sheet_info(self.sheets)
+        if not infos:
+            QMessageBox.warning(
+                self,
+                "データなし",
+                "ファイルに有効なデータが見つかりませんでした。\n"
+                "全てのシートが空、もしくはヘッダのみです。",
+            )
+            self.sheets = None
+            self.current_df = None
+            self.step1_next.setEnabled(False)
+            return
+
+        if len(infos) == 1:
+            self.sheet_group.setVisible(False)
+            self.current_df = self.sheets[infos[0].name]
+            self.single_sheet_label.setText(
+                f"シート「{infos[0].name}」を読み込みました"
+                f"（{infos[0].row_count}行 × {len(list(self.current_df.columns))}列）"
+            )
+            self.single_sheet_label.setVisible(True)
+            self.step1_next.setEnabled(True)
+        else:
+            self.single_sheet_label.setVisible(False)
+            self.sheet_group.setVisible(True)
+            self.sheet_list.clear()
+            for info in infos:
+                cols = len(list(self.sheets[info.name].columns))
+                item = QListWidgetItem(
+                    f"{info.name}　（{info.row_count}行 × {cols}列）"
+                )
+                item.setData(Qt.UserRole, info.name)
+                self.sheet_list.addItem(item)
+            self.step1_next.setEnabled(False)
+            self.current_df = None
 
     def _on_sheet_selected(self, row: int):
         if row < 0 or self.sheets is None:
@@ -585,35 +748,23 @@ class ImportPage(QWidget):
         self._setup_column_mapping()
         self._go_to_step(1)
 
-    # ─── Step 2 Logic: Column Mapping ───
+    # ─── Step 2 Logic ───
 
     def _setup_column_mapping(self):
-        """Populate column mapping combos for the selected sheet."""
         columns = list(self.current_df.columns)
-
-        # Show sheet info
         sheet_name = self._get_current_sheet_name()
         self.mapping_sheet_info.setText(
             f"シート: {sheet_name}　|　{len(columns)}列 × {len(self.current_df)}行"
         )
 
-        # Disconnect any previous connections to avoid duplicates
-        try:
-            self.name_combo.currentIndexChanged.disconnect(self._update_mapping_preview)
-        except RuntimeError:
-            pass
-        try:
-            self.date_combo.currentIndexChanged.disconnect(self._update_mapping_preview)
-        except RuntimeError:
-            pass
-        try:
-            self.buddhist_combo.currentIndexChanged.disconnect(
-                self._update_mapping_preview
-            )
-        except RuntimeError:
-            pass
+        if self._mapping_signals_connected:
+            for combo in (self.name_combo, self.date_combo, self.buddhist_combo):
+                try:
+                    combo.currentIndexChanged.disconnect(self._update_mapping_preview)
+                except RuntimeError:
+                    pass
 
-        for combo in [self.name_combo, self.date_combo, self.buddhist_combo]:
+        for combo in (self.name_combo, self.date_combo, self.buddhist_combo):
             combo.clear()
             combo.addItem("（自動検出）", None)
             for col in columns:
@@ -624,14 +775,13 @@ class ImportPage(QWidget):
         self._select_combo(self.date_combo, mapping.death_date_col)
         self._select_combo(self.buddhist_combo, mapping.buddhist_name_col)
 
-        # Show mapping preview
         self._update_mapping_preview()
         self.name_combo.currentIndexChanged.connect(self._update_mapping_preview)
         self.date_combo.currentIndexChanged.connect(self._update_mapping_preview)
         self.buddhist_combo.currentIndexChanged.connect(self._update_mapping_preview)
+        self._mapping_signals_connected = True
 
     def _update_mapping_preview(self):
-        """Show first 5 rows with mapped columns highlighted."""
         if self.current_df is None:
             return
         preview_df = self.current_df.head(5)
@@ -653,6 +803,7 @@ class ImportPage(QWidget):
 
         if not mapped:
             self.mapping_preview_table.setRowCount(0)
+            self.mapping_preview_table.setColumnCount(0)
             return
 
         self.mapping_preview_table.setColumnCount(len(mapped))
@@ -693,6 +844,7 @@ class ImportPage(QWidget):
             base.month_col,
             base.day_col,
         }
+        used.discard(None)
         base.extra_cols = [c for c in columns if c not in used]
         return base
 
@@ -710,36 +862,30 @@ class ImportPage(QWidget):
             return
         self.mapping = mapping
 
-        # Check if we need the column remap step
-        existing_db_cols = self.db.get_all_column_names()
-        extra_cols = mapping.extra_cols
-        # Also include buddhist_name_col as remappable
-        remappable = []
+        try:
+            existing_db_cols = self.db.get_all_column_names()
+        except DatabaseError as e:
+            QMessageBox.critical(self, "DBエラー", str(e))
+            return
+
+        remappable: list[str] = []
         if mapping.buddhist_name_col:
             remappable.append(mapping.buddhist_name_col)
-        remappable.extend(extra_cols)
+        remappable.extend(mapping.extra_cols)
 
         if existing_db_cols and remappable:
-            # DB has existing columns and Excel has extra columns → show remap step
             self._setup_column_remap(remappable, existing_db_cols)
             self._go_to_step(2)
         else:
-            # No existing DB columns or no extra columns → skip remap, go to preview
             mapping.column_remap = {}
             self._populate_preview()
             self._go_to_step(3)
 
-    # ─── Step 3 Logic: Extra Column Remapping ───
+    # ─── Step 3 Logic ───
 
     def _setup_column_remap(
         self, remappable_cols: list[str], existing_db_cols: list[str]
     ):
-        """Set up the column remapping UI.
-
-        Args:
-            remappable_cols: Excel columns that can be remapped (buddhist + extras).
-            existing_db_cols: Existing column names already in the database.
-        """
         self.remap_info.setText(
             f"データベースには既存の属性列が {len(existing_db_cols)} 件あります。\n"
             "インポートファイルの各列を、既存の列に統合するか、新規列として追加するか選んでください。"
@@ -750,7 +896,6 @@ class ImportPage(QWidget):
             "「そのまま（新規列）」を選ぶと、ファイルの列名がそのまま使われます。"
         )
 
-        # Clear previous form
         while self.remap_form_layout.rowCount() > 0:
             self.remap_form_layout.removeRow(0)
         self._remap_combos.clear()
@@ -758,27 +903,20 @@ class ImportPage(QWidget):
         for excel_col in remappable_cols:
             combo = QComboBox()
             combo.addItem(f"そのまま（{excel_col}）", excel_col)
-
-            # Add existing DB columns as remap targets
             for db_col in existing_db_cols:
                 if db_col == excel_col:
-                    # Same name already exists — highlight it
                     combo.addItem(f"既存列: {db_col}（同名）", db_col)
                 else:
                     combo.addItem(f"既存列: {db_col}", db_col)
-
-            # Auto-select if an exact match exists
             if excel_col in existing_db_cols:
                 for i in range(combo.count()):
                     if combo.itemData(i) == excel_col and i > 0:
                         combo.setCurrentIndex(i)
                         break
-
             label = QLabel(f"<b>{excel_col}</b>　→")
             self.remap_form_layout.addRow(label, combo)
             self._remap_combos[excel_col] = combo
 
-        # Show sample data for context
         if self.current_df is not None:
             preview_df = self.current_df.head(3)
             show_cols = [c for c in remappable_cols if c in preview_df.columns]
@@ -795,45 +933,41 @@ class ImportPage(QWidget):
                 self.remap_preview_group.setVisible(False)
 
     def _step3_next(self):
-        """Apply column remap selections and proceed to data preview."""
-        remap = {}
+        # Each column ends up writing to (remap_target or col_itself); detect
+        # any two sources that converge on the same target — including the
+        # case where one source kept its name as-is.
+        final_targets: dict[str, list[str]] = {}
         for excel_col, combo in self._remap_combos.items():
-            target = combo.currentData()
-            if target != excel_col:
-                # User chose to remap this column
-                remap[excel_col] = target
+            target = combo.currentData() or excel_col
+            final_targets.setdefault(target, []).append(excel_col)
+        conflicts = {t: srcs for t, srcs in final_targets.items() if len(srcs) > 1}
 
-        # Check for conflicts: two Excel cols mapped to the same DB col
-        target_counts: dict[str, list[str]] = {}
-        for excel_col, target in remap.items():
-            target_counts.setdefault(target, []).append(excel_col)
-        conflicts = {t: srcs for t, srcs in target_counts.items() if len(srcs) > 1}
         if conflicts:
-            msgs = []
-            for target, sources in conflicts.items():
-                msgs.append(f"  「{target}」← {', '.join(sources)}")
+            msgs = [f"  「{t}」← {', '.join(srcs)}" for t, srcs in conflicts.items()]
             QMessageBox.warning(
                 self,
                 "マッピング競合",
-                "複数の列が同じ既存列にマッピングされています:\n\n"
+                "複数の列が同じ最終列名にマッピングされています:\n\n"
                 + "\n".join(msgs)
-                + "\n\n"
-                "各既存列には1つのファイル列のみマッピングできます。",
+                + "\n\n各最終列にはファイルの1列のみマッピングできます。",
             )
             return
 
+        remap = {
+            excel_col: (combo.currentData() or excel_col)
+            for excel_col, combo in self._remap_combos.items()
+            if (combo.currentData() or excel_col) != excel_col
+        }
         self.mapping.column_remap = remap
 
-        # Show summary if any remaps were made
         if remap:
-            remap_lines = [f"  {src} → {dst}" for src, dst in remap.items()]
+            lines = [f"  {src} → {dst}" for src, dst in remap.items()]
             reply = QMessageBox.question(
                 self,
                 "列の統合確認",
-                f"以下の列名変換を適用してインポートします:\n\n"
-                + "\n".join(remap_lines)
-                + "\n\n"
-                "よろしいですか？",
+                "以下の列名変換を適用してインポートします:\n\n"
+                + "\n".join(lines)
+                + "\n\nよろしいですか？",
             )
             if reply != QMessageBox.Yes:
                 return
@@ -841,7 +975,7 @@ class ImportPage(QWidget):
         self._populate_preview()
         self._go_to_step(3)
 
-    # ─── Step 4 Logic: Data Preview ───
+    # ─── Step 4 Logic ───
 
     def _populate_preview(self):
         df = self.current_df
@@ -866,6 +1000,19 @@ class ImportPage(QWidget):
         else:
             self.preview_info.setText(f"全{total}行を表示中")
 
+    def _step4_back(self):
+        # Step 3 may have been skipped if remap was not needed; go back to
+        # whichever step actually owns the data prior to preview.
+        try:
+            db_cols = self.db.get_all_column_names()
+        except DatabaseError:
+            db_cols = []
+        has_remap_step = bool(db_cols) and bool(
+            (self.mapping.extra_cols if self.mapping else [])
+            or (self.mapping.buddhist_name_col if self.mapping else None)
+        )
+        self._go_to_step(2 if has_remap_step else 1)
+
     def _step4_next(self):
         reply = QMessageBox.question(
             self,
@@ -879,20 +1026,24 @@ class ImportPage(QWidget):
         self._go_to_step(4)
         self._run_validation()
 
-    # ─── Step 5 Logic: Validation ───
+    # ─── Step 5 Logic ───
 
     def _run_validation(self):
-        self.validation_progress.setMaximum(len(self.current_df))
+        self.validation_progress.setMaximum(max(1, len(self.current_df)))
         self.validation_progress.setValue(0)
         self.validation_status.setText("検証中...")
         self.step5_next.setEnabled(False)
         self.export_errors_btn.setEnabled(False)
+        self.revalidate_btn.setEnabled(False)
+        self.delete_errors_btn.setEnabled(False)
 
         self._worker = ImportWorker(
             self.db, self.current_df, self.mapping, self.source_path
         )
-        self._worker.progress.connect(lambda c, t: self.validation_progress.setValue(c))
-        self._worker.finished.connect(self._on_validation_finished)
+        self._worker.progress.connect(
+            lambda c, _t: self.validation_progress.setValue(c)
+        )
+        self._worker.result_ready.connect(self._on_validation_finished)
         self._worker.error.connect(self._on_validation_error)
         self._worker.start()
 
@@ -900,43 +1051,8 @@ class ImportPage(QWidget):
         self._worker = None
         self._validation_result = result
         self.validation_progress.setValue(self.validation_progress.maximum())
-
-        valid_count = len(result.valid_rows)
-        error_count = len(result.error_rows)
-        dup_count = len(result.duplicate_rows)
-
-        status_parts = [
-            "検証完了:",
-            f"  正常: {valid_count}件",
-            f"  エラー: {error_count}件",
-            f"  重複: {dup_count}件",
-        ]
-        color = "#27ae60" if error_count == 0 else "#e67e22"
-        self.validation_status.setText("\n".join(status_parts))
-        self.validation_status.setStyleSheet(
-            f"color: {color}; font-size: 13px; padding: 8px;"
-        )
-
-        # Populate error table
-        if result.error_rows:
-            self.error_table.setColumnCount(3)
-            self.error_table.setHorizontalHeaderLabels(
-                ["行番号", "エラー内容", "データ"]
-            )
-            self.error_table.setRowCount(len(result.error_rows))
-            for i, err in enumerate(result.error_rows):
-                self.error_table.setItem(i, 0, QTableWidgetItem(str(err.row_index + 2)))
-                self.error_table.setItem(i, 1, QTableWidgetItem(err.error_message))
-                data_str = ", ".join(
-                    f"{k}={v}" for k, v in list(err.raw_data.items())[:3]
-                )
-                self.error_table.setItem(i, 2, QTableWidgetItem(data_str))
-            self.export_errors_btn.setEnabled(True)
-        else:
-            self.error_table.setRowCount(0)
-            self.error_table.setColumnCount(0)
-
-        self.step5_next.setEnabled(valid_count > 0 or dup_count > 0)
+        self._render_validation_summary()
+        self._render_error_table()
 
     def _on_validation_error(self, error_msg: str):
         self._worker = None
@@ -945,113 +1061,251 @@ class ImportPage(QWidget):
             "color: #e74c3c; font-size: 13px; padding: 8px;"
         )
 
+    def _render_validation_summary(self):
+        result = self._validation_result
+        if result is None:
+            return
+        valid_count = len(result.valid_rows)
+        error_count = len(result.error_rows)
+        dup_count = len(result.duplicate_rows)
+        color = "#27ae60" if error_count == 0 else "#e67e22"
+        self.validation_status.setText(
+            "検証完了:\n"
+            f"  正常: {valid_count}件\n"
+            f"  エラー: {error_count}件（修正または破棄してください）\n"
+            f"  重複: {dup_count}件（次の画面で処理方法を選択できます）"
+        )
+        self.validation_status.setStyleSheet(
+            f"color: {color}; font-size: 13px; padding: 8px;"
+        )
+        # The "next" button is enabled even with errors — the user can choose
+        # to import only the rows that are valid and discard the rest.
+        self.step5_next.setEnabled((valid_count + dup_count) > 0)
+
+    def _render_error_table(self):
+        result = self._validation_result
+        if result is None:
+            return
+        errors = result.error_rows
+        if not errors:
+            self.error_table.setRowCount(0)
+            self.error_table.setColumnCount(0)
+            self.revalidate_btn.setEnabled(False)
+            self.export_errors_btn.setEnabled(False)
+            self.delete_errors_btn.setEnabled(False)
+            return
+
+        # Header: original row number, every raw column from the source, and
+        # the human-readable error message at the end (read-only).
+        all_cols = list(self.current_df.columns)
+        headers = ["元の行"] + all_cols + ["エラー内容"]
+        self.error_table.setColumnCount(len(headers))
+        self.error_table.setHorizontalHeaderLabels(headers)
+        self.error_table.setRowCount(len(errors))
+
+        for i, err in enumerate(errors):
+            row_item = QTableWidgetItem(str(err.row_index + 2))
+            row_item.setFlags(row_item.flags() & ~Qt.ItemIsEditable)
+            self.error_table.setItem(i, 0, row_item)
+            for j, col in enumerate(all_cols, start=1):
+                item = QTableWidgetItem(str(err.raw_data.get(col, "")))
+                self.error_table.setItem(i, j, item)
+            err_item = QTableWidgetItem(err.error_message)
+            err_item.setFlags(err_item.flags() & ~Qt.ItemIsEditable)
+            err_item.setForeground(Qt.red)
+            self.error_table.setItem(i, len(headers) - 1, err_item)
+        self.error_table.resizeColumnsToContents()
+
+        self.revalidate_btn.setEnabled(True)
+        self.export_errors_btn.setEnabled(True)
+        self.delete_errors_btn.setEnabled(True)
+
+    def _revalidate_errors(self):
+        """Run the pipeline on each (possibly edited) error row again and
+        promote any rows that now validate."""
+        result = self._validation_result
+        if result is None or not result.error_rows:
+            return
+
+        all_cols = list(self.current_df.columns)
+        pipeline = ValidationPipeline(self.db, self.mapping, self.source_path)
+
+        new_errors: list[ErrorRow] = []
+        promoted_valid = 0
+        promoted_dup = 0
+
+        for i, err in enumerate(result.error_rows):
+            row_data: dict[str, str] = {}
+            for j, col in enumerate(all_cols, start=1):
+                item = self.error_table.item(i, j)
+                row_data[col] = item.text() if item else ""
+            outcome = pipeline.validate_one(row_data, err.row_index)
+            if isinstance(outcome, ErrorRow):
+                new_errors.append(outcome)
+            else:
+                # ValidatedRow — route to dup or valid bucket
+                if outcome.duplicate_of is not None:
+                    result.duplicate_rows.append(outcome)
+                    promoted_dup += 1
+                else:
+                    result.valid_rows.append(outcome)
+                    promoted_valid += 1
+
+        result.error_rows = new_errors
+        self._render_validation_summary()
+        self._render_error_table()
+        QMessageBox.information(
+            self,
+            "再検証完了",
+            f"正常に修正: {promoted_valid}件\n"
+            f"重複として検出: {promoted_dup}件\n"
+            f"未解決のエラー: {len(new_errors)}件",
+        )
+
+    def _delete_selected_errors(self):
+        result = self._validation_result
+        if result is None or not result.error_rows:
+            return
+        rows = sorted({idx.row() for idx in self.error_table.selectedIndexes()}, reverse=True)
+        if not rows:
+            QMessageBox.information(self, "情報", "削除する行を選択してください。")
+            return
+        reply = QMessageBox.question(
+            self,
+            "破棄確認",
+            f"選択された{len(rows)}件のエラー行をインポートから除外します。\n続行しますか？",
+        )
+        if reply != QMessageBox.Yes:
+            return
+        for r in rows:
+            if 0 <= r < len(result.error_rows):
+                result.error_rows.pop(r)
+        self._render_validation_summary()
+        self._render_error_table()
+
     def _export_errors(self):
         if not self._validation_result or not self._validation_result.error_rows:
             return
         path, _ = QFileDialog.getSaveFileName(
-            self,
-            "エラー行を保存",
-            "errors.xlsx",
-            "Excel (*.xlsx)",
+            self, "エラー行を保存", "errors.xlsx", "Excel (*.xlsx)"
         )
-        if path:
+        if not path:
+            return
+        try:
             export_error_rows(self._validation_result.error_rows, Path(path))
             QMessageBox.information(self, "完了", f"エラー行を保存しました:\n{path}")
+        except Exception as e:
+            QMessageBox.critical(self, "エラー", f"エクスポートに失敗しました:\n{e}")
 
     def _step5_next(self):
-        self._handle_duplicates()
         self._populate_confirm()
         self._go_to_step(5)
 
-    # ─── Step 6 Logic: Confirm Import ───
+    # ─── Step 6 Logic ───
 
-    def _handle_duplicates(self):
-        """Ask user about each duplicate row."""
-        if not self._validation_result:
+    def _open_duplicate_dialog(self):
+        if not self._validation_result or not self._validation_result.duplicate_rows:
             return
-
-        for validated, existing_id in self._validation_result.duplicate_rows:
-            reply = QMessageBox.question(
-                self,
-                "重複データの処理",
-                f"「{validated.name}」（{validated.era_display}）は既に登録されています。\n\n"
-                "「はい」→ 既存データを上書き\n"
-                "「いいえ」→ 新規データとして追加\n"
-                "「キャンセル」→ スキップ（インポートしない）",
-                QMessageBox.StandardButton.Yes
-                | QMessageBox.StandardButton.No
-                | QMessageBox.StandardButton.Cancel,
-            )
-            if reply == QMessageBox.StandardButton.Yes:
-                self.db.update_person(
-                    existing_id,
-                    name=validated.name,
-                    death_date=validated.death_date,
-                    attributes=validated.attributes,
-                )
-            elif reply == QMessageBox.StandardButton.No:
-                self._validation_result.valid_rows.append(validated)
-            # Cancel = skip
+        dlg = DuplicateResolutionDialog(
+            self._validation_result.duplicate_rows, parent=self
+        )
+        if dlg.exec():
+            dlg.apply_to(self._validation_result.duplicate_rows)
+            self._populate_confirm()
 
     def _populate_confirm(self):
         result = self._validation_result
         if not result:
             return
 
-        valid_count = len(result.valid_rows)
-        sheet_name = self._get_current_sheet_name()
+        # Default duplicate action to "overwrite" so the summary is accurate
+        # even if the user hasn't opened the resolution dialog yet.
+        for row in result.duplicate_rows:
+            if row.duplicate_action is None:
+                row.duplicate_action = "overwrite"
 
-        # Build remap summary
+        sheet_name = self._get_current_sheet_name()
         remap_text = ""
         if self.mapping and self.mapping.column_remap:
-            remap_lines = [
-                f"  {src} → {dst}" for src, dst in self.mapping.column_remap.items()
-            ]
-            remap_text = "\n列名変換:\n" + "\n".join(remap_lines) + "\n"
+            lines = [f"  {src} → {dst}" for src, dst in self.mapping.column_remap.items()]
+            remap_text = "\n列名変換:\n" + "\n".join(lines) + "\n"
 
-        self.confirm_summary.setText(
-            f"インポート対象: {valid_count}件\n"
-            f"ファイル: {Path(self.source_path).name}\n"
-            f"シート: {sheet_name}\n"
-            f"{remap_text}\n"
-            f"「インポート実行」を押すとデータベースに追加されます。"
+        # Compose count breakdown for the dup rows
+        to_overwrite = sum(
+            1 for r in result.duplicate_rows if r.duplicate_action == "overwrite"
+        )
+        to_insert_again = sum(
+            1 for r in result.duplicate_rows if r.duplicate_action == "insert"
+        )
+        to_skip = sum(
+            1 for r in result.duplicate_rows if r.duplicate_action == "skip"
         )
 
-        # Show valid rows in table
-        if result.valid_rows:
-            self.valid_table.setColumnCount(3)
-            self.valid_table.setHorizontalHeaderLabels(["氏名", "没年月日", "属性数"])
-            self.valid_table.setRowCount(min(len(result.valid_rows), 100))
-            for i, row in enumerate(result.valid_rows[:100]):
-                self.valid_table.setItem(i, 0, QTableWidgetItem(row.name))
-                self.valid_table.setItem(i, 1, QTableWidgetItem(row.era_display))
-                self.valid_table.setItem(
-                    i, 2, QTableWidgetItem(str(len(row.attributes)))
-                )
+        dup_summary = ""
+        if result.duplicate_rows:
+            dup_summary = (
+                f"\n重複データの処理:\n"
+                f"  上書き: {to_overwrite}件\n"
+                f"  新規追加: {to_insert_again}件\n"
+                f"  スキップ: {to_skip}件\n"
+            )
+            self.dup_btn.setVisible(True)
+            self.dup_btn.setText(
+                f"重複データの処理を確認（{len(result.duplicate_rows)}件）"
+            )
+        else:
+            self.dup_btn.setVisible(False)
+
+        self.confirm_summary.setText(
+            f"インポート対象: 正常 {len(result.valid_rows)}件 / "
+            f"重複 {len(result.duplicate_rows)}件\n"
+            f"ファイル: {Path(self.source_path).name}\n"
+            f"シート: {sheet_name}\n"
+            f"{remap_text}{dup_summary}\n"
+            "「インポート実行」を押すとデータベースに書き込まれます。"
+        )
+
+        rows_to_show = result.valid_rows + [
+            r for r in result.duplicate_rows if r.duplicate_action != "skip"
+        ]
+        self.valid_table.setColumnCount(4)
+        self.valid_table.setHorizontalHeaderLabels(
+            ["氏名", "没年月日", "属性数", "処理"]
+        )
+        self.valid_table.setRowCount(min(len(rows_to_show), 200))
+        for i, row in enumerate(rows_to_show[:200]):
+            self.valid_table.setItem(i, 0, QTableWidgetItem(row.name))
+            self.valid_table.setItem(i, 1, QTableWidgetItem(row.era_display))
+            self.valid_table.setItem(i, 2, QTableWidgetItem(str(len(row.attributes))))
+            if row.duplicate_of is None:
+                action_text = "新規追加"
+            elif row.duplicate_action == "overwrite":
+                action_text = "上書き"
+            elif row.duplicate_action == "insert":
+                action_text = "新規追加（重複）"
+            else:
+                action_text = "スキップ"
+            self.valid_table.setItem(i, 3, QTableWidgetItem(action_text))
 
     def _execute_import(self):
+        result = self._validation_result
+        if not result:
+            return
+
+        all_rows = result.valid_rows + result.duplicate_rows
+        write_count = sum(1 for r in all_rows if r.duplicate_action != "skip")
+
         reply = QMessageBox.question(
             self,
             "最終確認",
-            f"{len(self._validation_result.valid_rows)}件のデータをインポートします。\n\n"
-            "実行しますか？",
+            f"{write_count}件のデータをデータベースに書き込みます。\n\n実行しますか？",
         )
         if reply != QMessageBox.Yes:
             return
 
         try:
-            count = import_validated_rows(self.db, self._validation_result.valid_rows)
-            self.result_icon.setText("OK")
-            self.result_icon.setStyleSheet(
-                "font-size: 48px; padding: 16px; color: #27ae60;"
-            )
-            self.result_label.setText(
-                f"インポートが完了しました\n\n" f"{count}件のデータを追加しました。"
-            )
-            self.result_label.setStyleSheet(
-                "color: #27ae60; font-size: 16px; padding: 16px;"
-            )
-        except Exception as e:
+            outcome = import_validated_rows(self.db, all_rows)
+        except DatabaseError as e:
             self.result_icon.setText("NG")
             self.result_icon.setStyleSheet(
                 "font-size: 48px; padding: 16px; color: #e74c3c;"
@@ -1060,6 +1314,47 @@ class ImportPage(QWidget):
             self.result_label.setStyleSheet(
                 "color: #e74c3c; font-size: 16px; padding: 16px;"
             )
+            self.failures_table.setVisible(False)
+            self._go_to_step(6)
+            return
+
+        inserted = outcome["inserted"]
+        updated = outcome["updated"]
+        skipped = outcome["skipped"]
+        failures = outcome["failures"]
+
+        if failures:
+            self.result_icon.setText("⚠")
+            self.result_icon.setStyleSheet(
+                "font-size: 48px; padding: 16px; color: #e67e22;"
+            )
+        else:
+            self.result_icon.setText("OK")
+            self.result_icon.setStyleSheet(
+                "font-size: 48px; padding: 16px; color: #27ae60;"
+            )
+
+        msg_lines = [
+            "インポート結果:",
+            f"  新規追加: {inserted}件",
+            f"  上書き: {updated}件",
+            f"  スキップ: {skipped}件",
+        ]
+        if failures:
+            msg_lines.append(f"  失敗: {len(failures)}件（下記参照）")
+        self.result_label.setText("\n".join(msg_lines))
+        self.result_label.setStyleSheet(
+            "color: #2c3e50; font-size: 16px; padding: 16px;"
+        )
+
+        if failures:
+            self.failures_table.setRowCount(len(failures))
+            for i, (idx, reason) in enumerate(failures):
+                self.failures_table.setItem(i, 0, QTableWidgetItem(str(idx + 2)))
+                self.failures_table.setItem(i, 1, QTableWidgetItem(reason))
+            self.failures_table.setVisible(True)
+        else:
+            self.failures_table.setVisible(False)
 
         self._go_to_step(6)
 

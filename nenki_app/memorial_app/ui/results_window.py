@@ -73,29 +73,31 @@ class DocumentSettingsDialog(QDialog):
     """Dialog where user selects which fields to include and layout."""
 
     def __init__(
-        self, available_fields: list[str], sorted_data, target_year, parent=None
+        self,
+        available_fields: list[str],
+        target_year,
+        group_count: int,
+        people_count: int,
+        parent=None,
     ):
         super().__init__(parent)
         self.setWindowTitle("ドキュメント生成設定")
         self.setMinimumWidth(600)
         self.setMinimumHeight(500)
 
-        self._sorted_data = sorted_data
         self._target_year = target_year
 
         layout = QVBoxLayout(self)
 
-        # Summary
-        total_people = sum(len(entries) for _, entries in sorted_data)
-        summary = QLabel(
+        self.summary_label = QLabel(
             f"対象年: {target_year}年　|　"
-            f"年忌グループ: {len(sorted_data)}　|　"
-            f"対象人数: {total_people}名"
+            f"年忌グループ: {group_count}　|　"
+            f"対象人数: {people_count}名"
         )
-        summary.setStyleSheet(
+        self.summary_label.setStyleSheet(
             "font-size: 13px; color: #2c3e50; padding: 8px; background: #eaf2f8; border-radius: 4px;"
         )
-        layout.addWidget(summary)
+        layout.addWidget(self.summary_label)
 
         # Field selection
         field_group = QGroupBox(
@@ -288,6 +290,21 @@ class ResultsPage(QWidget):
             cb.stateChanged.connect(self._filter_results)
             nenki_layout.addWidget(cb, i // 5, i % 5)
             self.nenki_checks[name] = cb
+
+        # Quick select-all / select-none / defaults
+        select_row = QHBoxLayout()
+        all_btn = QPushButton("全て選択")
+        all_btn.clicked.connect(lambda: self._toggle_all_nenki(True))
+        select_row.addWidget(all_btn)
+        none_btn = QPushButton("全て解除")
+        none_btn.clicked.connect(lambda: self._toggle_all_nenki(False))
+        select_row.addWidget(none_btn)
+        default_btn = QPushButton("標準セットに戻す")
+        default_btn.clicked.connect(self._reset_default_nenki)
+        select_row.addWidget(default_btn)
+        select_row.addStretch()
+        nenki_layout.addLayout(select_row, (len(all_nenki) // 5) + 1, 0, 1, 5)
+
         layout.addWidget(nenki_group)
 
         # Results table
@@ -326,6 +343,14 @@ class ResultsPage(QWidget):
 
     def refresh(self):
         pass
+
+    def _toggle_all_nenki(self, checked: bool):
+        for cb in self.nenki_checks.values():
+            cb.setChecked(checked)
+
+    def _reset_default_nenki(self):
+        for name, cb in self.nenki_checks.items():
+            cb.setChecked(name in DEFAULT_SELECTED_NENKI)
 
     def set_anniversary_data(self, results, target_year):
         self._results = results
@@ -430,29 +455,23 @@ class ResultsPage(QWidget):
             QMessageBox.information(self, "情報", "出力する対象者がいません。")
             return
 
-        # Discover available fields
+        # Discover available fields and compute group/people counts up front
         available_fields = self._collect_available_fields()
-
-        # Show settings dialog
-        dialog = DocumentSettingsDialog(
-            available_fields, [], self._target_year, parent=self
-        )
-        # We pass empty sorted_data to dialog since we haven't built it yet
-        # Build a temporary one for the summary count
-        temp_groups = defaultdict(list)
-        for ann, name, attrs, pid in filtered:
+        temp_groups: dict[str, list[str]] = defaultdict(list)
+        for ann, name, _attrs, _pid in filtered:
             death_year_era = format_year_kanji_era(ann.death_date)
             key = f"{ann.name}|{ann.years_offset}|{death_year_era}"
             temp_groups[key].append(name)
-        dialog._sorted_data = list(temp_groups.items())
-        # Update summary label
-        total_people = sum(len(entries) for _, entries in dialog._sorted_data)
-        dialog.findChildren(QLabel)[0].setText(
-            f"対象年: {self._target_year}年　|　"
-            f"年忌グループ: {len(dialog._sorted_data)}　|　"
-            f"対象人数: {total_people}名"
-        )
+        group_count = len(temp_groups)
+        people_count = len(filtered)
 
+        dialog = DocumentSettingsDialog(
+            available_fields,
+            self._target_year,
+            group_count,
+            people_count,
+            parent=self,
+        )
         if not dialog.exec():
             return
 
@@ -502,15 +521,17 @@ class ResultsPage(QWidget):
                 from memorial_app.documents.word_generator import WordGenerator
 
                 gen = WordGenerator()
-                gen.create_combined_document(
+                pdf_path = Path(path).with_suffix(".pdf")
+                # Remove any stale PDF so a false-positive can't claim success
+                pdf_path.unlink(missing_ok=True)
+                pdf_made = gen.create_combined_document(
                     sorted_data,
                     title,
                     Path(path),
                     field_names=entry_fields,
                     single_column=single_column,
                 )
-                pdf_path = Path(path).with_suffix(".pdf")
-                if pdf_path.exists():
+                if pdf_made and pdf_path.exists():
                     QMessageBox.information(
                         self,
                         "完了",
@@ -518,7 +539,10 @@ class ResultsPage(QWidget):
                     )
                 else:
                     QMessageBox.information(
-                        self, "完了", f"Word文書を保存しました:\n{path}"
+                        self,
+                        "完了",
+                        f"Word文書を保存しました:\n{path}\n\n"
+                        "（PDFは Microsoft Word が必要です。インストールされていない環境では生成されません。）",
                     )
             else:
                 from memorial_app.documents.pdf_generator import PdfGenerator

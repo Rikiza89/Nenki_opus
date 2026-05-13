@@ -55,7 +55,7 @@ class WordGenerator:
         field_names: list[str] | None = None,
         single_column: bool = True,
         auto_pdf: bool = True,
-    ):
+    ) -> bool:
         """Create a combined nenki document with vertical Japanese text.
 
         Args:
@@ -66,6 +66,12 @@ class WordGenerator:
             output_path: Path to save the .docx file.
             field_names: List of field names corresponding to each entry's values.
             single_column: True for single column, False for dual column layout.
+            auto_pdf: When True, also attempt to produce a .pdf next to the .docx.
+
+        Returns:
+            True if both the Word file was written *and* a sibling PDF was
+            produced; False if the Word file was written but no PDF was made
+            (typical on Linux / when Word is not installed).
         """
         doc = Document()
 
@@ -110,7 +116,8 @@ class WordGenerator:
         doc.save(str(output_path))
 
         if auto_pdf:
-            self._convert_to_pdf(output_path)
+            return self._convert_to_pdf(output_path)
+        return False
 
     def _add_title(self, doc: Document, title: str):
         """Add full-width centered title (single column mode)."""
@@ -423,12 +430,18 @@ class WordGenerator:
             # Space between groups
             doc.add_paragraph()
 
-    def _convert_to_pdf(self, docx_path: Path):
-        """Try to convert .docx to .pdf using docx2pdf."""
+    def _convert_to_pdf(self, docx_path: Path) -> bool:
+        """Try to convert .docx to .pdf using docx2pdf.
+
+        Returns True only when a PDF file was actually produced.
+        """
         try:
             from docx2pdf import convert
-
-            pdf_path = docx_path.with_suffix(".pdf")
+        except ImportError:
+            return False
+        pdf_path = docx_path.with_suffix(".pdf")
+        try:
             convert(str(docx_path), str(pdf_path))
         except Exception:
-            pass
+            return False
+        return pdf_path.exists()

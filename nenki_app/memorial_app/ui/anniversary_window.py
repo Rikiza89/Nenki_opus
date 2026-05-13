@@ -14,21 +14,18 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHeaderView,
     QMessageBox,
+    QProgressBar,
+    QDateEdit,
 )
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import Qt, QThread, Signal, QDate
 
-from memorial_app.database.db_manager import DatabaseManager
+from memorial_app.database.db_manager import DatabaseManager, DatabaseError
 from memorial_app.core.nenki_calculator import (
     get_anniversaries_for_year,
     get_upcoming_anniversaries,
     get_anniversaries_in_range,
-    NenkiAnniversary,
 )
 from memorial_app.core.era_converter import format_date_era
-from memorial_app.core.date_converter import (
-    format_date_kanji_era,
-    format_year_kanji_era,
-)
 
 
 class CalculationWorker(QThread):
@@ -46,15 +43,29 @@ class CalculationWorker(QThread):
 
     def run(self):
         try:
-            persons = self.db.get_all_persons(offset=0, limit=100000)
+            # Paginate through all persons so memory stays bounded regardless of DB size.
+            page = 1000
+            offset = 0
+            persons = []
+            while True:
+                try:
+                    chunk = self.db.get_all_persons(offset=offset, limit=page)
+                except DatabaseError as e:
+                    self.error.emit(str(e))
+                    return
+                if not chunk:
+                    break
+                persons.extend(chunk)
+                offset += len(chunk)
+                if len(chunk) < page:
+                    break
+
             results = []
             total = len(persons)
-
             for i, person in enumerate(persons):
-                self.progress.emit(i, total)
-                try:
-                    death_date = person.death_date_obj
-                except (ValueError, TypeError):
+                self.progress.emit(i + 1, total)
+                death_date = person.safe_death_date
+                if death_date is None:
                     continue
 
                 if self.mode == "year":
@@ -68,16 +79,11 @@ class CalculationWorker(QThread):
                 else:
                     continue
 
-                # Collect ALL attributes as a dict
-                attrs = {}
-                for attr in person.attributes:
-                    attrs[attr.column_name] = attr.value or ""
-
+                attrs = {a.column_name: (a.value or "") for a in person.attributes}
                 for ann in anns:
-                    # Each result carries full person data
                     results.append((ann, person.name, attrs, person.id))
 
-            results.sort(key=lambda x: (x[0].name, x[0].date))
+            results.sort(key=lambda x: (x[0].date, x[0].name))
             self.finished.emit(results)
         except Exception as e:
             self.error.emit(str(e))
@@ -87,7 +93,7 @@ class AnniversaryPage(QWidget):
     def __init__(self, db_manager: DatabaseManager):
         super().__init__()
         self.db = db_manager
-        self._worker = None
+        self._worker: CalculationWorker | None = None
         self._results = []
 
         layout = QVBoxLayout(self)
@@ -97,13 +103,14 @@ class AnniversaryPage(QWidget):
         header.setStyleSheet("font-size: 24px; font-weight: bold; color: #2c3e50;")
         layout.addWidget(header)
 
-        # Mode selection
         mode_group = QGroupBox("計算モード")
         mode_layout = QHBoxLayout(mode_group)
 
         self.mode_combo = QComboBox()
         self.mode_combo.addItem("指定年の年忌一覧", "year")
         self.mode_combo.addItem("今後12ヶ月の年忌", "upcoming")
+        self.mode_combo.addItem("期間指定", "range")
+        self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
         mode_layout.addWidget(self.mode_combo)
 
         self.year_spin = QSpinBox()
@@ -112,6 +119,20 @@ class AnniversaryPage(QWidget):
         self.year_spin.setPrefix("対象年: ")
         mode_layout.addWidget(self.year_spin)
 
+        self.start_date_edit = QDateEdit()
+        self.start_date_edit.setDisplayFormat("yyyy-MM-dd")
+        self.start_date_edit.setCalendarPopup(True)
+        self.start_date_edit.setDate(QDate.currentDate())
+        mode_layout.addWidget(QLabel("開始:"))
+        mode_layout.addWidget(self.start_date_edit)
+
+        self.end_date_edit = QDateEdit()
+        self.end_date_edit.setDisplayFormat("yyyy-MM-dd")
+        self.end_date_edit.setCalendarPopup(True)
+        self.end_date_edit.setDate(QDate.currentDate().addYears(1))
+        mode_layout.addWidget(QLabel("終了:"))
+        mode_layout.addWidget(self.end_date_edit)
+
         calc_btn = QPushButton("計算実行")
         calc_btn.setStyleSheet("background: #3498db; color: white; padding: 8px 20px;")
         calc_btn.clicked.connect(self._calculate)
@@ -119,7 +140,11 @@ class AnniversaryPage(QWidget):
 
         layout.addWidget(mode_group)
 
-        # Results table
+        # Progress bar wired to the worker
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
+        layout.addWidget(self.progress_bar)
+
         self.table = QTableWidget()
         self.table.setColumnCount(5)
         self.table.setHorizontalHeaderLabels(
@@ -130,7 +155,6 @@ class AnniversaryPage(QWidget):
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         layout.addWidget(self.table)
 
-        # Status & export
         bottom_layout = QHBoxLayout()
         self.status_label = QLabel("")
         self.status_label.setStyleSheet("color: #7f8c8d;")
@@ -146,8 +170,21 @@ class AnniversaryPage(QWidget):
 
         layout.addLayout(bottom_layout)
 
+        # Initialize mode-dependent widget visibility
+        self._on_mode_changed()
+
     def refresh(self):
         pass
+
+    def _on_mode_changed(self):
+        mode = self.mode_combo.currentData()
+        self.year_spin.setVisible(mode == "year")
+        is_range = mode == "range"
+        self.start_date_edit.setVisible(is_range)
+        self.end_date_edit.setVisible(is_range)
+        for w in self.findChildren(QLabel):
+            if w.text() == "開始:" or w.text() == "終了:":
+                w.setVisible(is_range)
 
     def _stop_worker(self):
         if self._worker is not None and self._worker.isRunning():
@@ -159,26 +196,54 @@ class AnniversaryPage(QWidget):
         self._stop_worker()
         mode = self.mode_combo.currentData()
 
+        if mode == "range":
+            s = self.start_date_edit.date().toPython()
+            e = self.end_date_edit.date().toPython()
+            if e < s:
+                QMessageBox.warning(
+                    self, "入力エラー", "終了日は開始日以降にしてください。"
+                )
+                return
+        else:
+            s = e = None
+
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setRange(0, 0)  # indeterminate until first progress event
+
         self._worker = CalculationWorker(
             self.db,
             mode=mode,
             target_year=self.year_spin.value(),
+            start_date=s,
+            end_date=e,
         )
+        self._worker.progress.connect(self._on_progress)
         self._worker.finished.connect(self._on_results)
         self._worker.finished.connect(lambda: setattr(self, "_worker", None))
-        self._worker.error.connect(lambda e: QMessageBox.critical(self, "エラー", e))
+        self._worker.error.connect(self._on_error)
         self._worker.error.connect(lambda _: setattr(self, "_worker", None))
         self._worker.start()
+
+    def _on_progress(self, current: int, total: int):
+        if total > 0:
+            self.progress_bar.setRange(0, total)
+            self.progress_bar.setValue(current)
+
+    def _on_error(self, msg: str):
+        self.progress_bar.setVisible(False)
+        QMessageBox.critical(self, "エラー", msg)
 
     def hideEvent(self, event):
         self._stop_worker()
         super().hideEvent(event)
 
     def _on_results(self, results):
+        self.progress_bar.setVisible(False)
         self._results = results
         self.table.setRowCount(len(results))
 
-        for i, (ann, name, attrs, pid) in enumerate(results):
+        for i, (ann, name, attrs, _pid) in enumerate(results):
             buddhist_name = attrs.get("法名", "") or attrs.get("戒名", "")
             self.table.setItem(i, 0, QTableWidgetItem(ann.name))
             self.table.setItem(i, 1, QTableWidgetItem(format_date_era(ann.date)))
@@ -193,7 +258,10 @@ class AnniversaryPage(QWidget):
         main_window = self.window()
         if hasattr(main_window, "pages") and "結果一覧" in main_window.pages:
             results_page = main_window.pages["結果一覧"]
-            results_page.set_anniversary_data(self._results, self.year_spin.value())
+            target_year = self.year_spin.value()
+            if self.mode_combo.currentData() != "year":
+                target_year = datetime.date.today().year
+            results_page.set_anniversary_data(self._results, target_year)
             main_window._select_page("結果一覧")
 
     def get_results(self):
