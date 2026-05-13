@@ -52,7 +52,7 @@ from memorial_app.importer.validation_pipeline import (
 
 class ImportWorker(QThread):
     progress = Signal(int, int)
-    finished = Signal(object)
+    result_ready = Signal(object)  # renamed: avoids shadowing QThread.finished
     error = Signal(str)
 
     def __init__(self, db, df, mapping, source_path):
@@ -68,7 +68,7 @@ class ImportWorker(QThread):
             result = pipeline.validate(
                 self.df, progress_callback=lambda c, t: self.progress.emit(c, t)
             )
-            self.finished.emit(result)
+            self.result_ready.emit(result)
         except Exception as e:
             self.error.emit(str(e))
 
@@ -202,6 +202,8 @@ class ImportPage(QWidget):
         self.mapping: ColumnMapping | None = None
         self.source_path: str | None = None
         self._worker: ImportWorker | None = None
+        self._orphaned_workers: list[ImportWorker] = []
+        self._mapping_signals_connected = False
         self._validation_result: ValidationResult | None = None
         self._remap_combos: dict[str, QComboBox] = {}
 
@@ -619,9 +621,28 @@ class ImportPage(QWidget):
 
     def _stop_worker(self):
         if self._worker is not None and self._worker.isRunning():
+            try:
+                self._worker.result_ready.disconnect()
+                self._worker.error.disconnect()
+                self._worker.progress.disconnect()
+            except RuntimeError:
+                pass
             self._worker.quit()
-            self._worker.wait(3000)
+            if not self._worker.wait(3000):
+                # Thread still running after timeout — keep Python reference alive
+                # so Qt doesn't destroy the object while the thread is executing.
+                orphan = self._worker
+                self._orphaned_workers.append(orphan)
+                orphan.finished.connect(
+                    lambda w=orphan: self._orphaned_workers.remove(w)
+                    if w in self._orphaned_workers
+                    else None
+                )
         self._worker = None
+
+    def _cleanup_orphan(self, worker: "ImportWorker"):
+        if worker in self._orphaned_workers:
+            self._orphaned_workers.remove(worker)
 
     def _reset(self):
         self._stop_worker()
@@ -736,15 +757,12 @@ class ImportPage(QWidget):
             f"シート: {sheet_name}　|　{len(columns)}列 × {len(self.current_df)}行"
         )
 
-        for combo, slot in (
-            (self.name_combo, self._update_mapping_preview),
-            (self.date_combo, self._update_mapping_preview),
-            (self.buddhist_combo, self._update_mapping_preview),
-        ):
-            try:
-                combo.currentIndexChanged.disconnect(slot)
-            except RuntimeError:
-                pass
+        if self._mapping_signals_connected:
+            for combo in (self.name_combo, self.date_combo, self.buddhist_combo):
+                try:
+                    combo.currentIndexChanged.disconnect(self._update_mapping_preview)
+                except RuntimeError:
+                    pass
 
         for combo in (self.name_combo, self.date_combo, self.buddhist_combo):
             combo.clear()
@@ -761,6 +779,7 @@ class ImportPage(QWidget):
         self.name_combo.currentIndexChanged.connect(self._update_mapping_preview)
         self.date_combo.currentIndexChanged.connect(self._update_mapping_preview)
         self.buddhist_combo.currentIndexChanged.connect(self._update_mapping_preview)
+        self._mapping_signals_connected = True
 
     def _update_mapping_preview(self):
         if self.current_df is None:
@@ -1024,7 +1043,7 @@ class ImportPage(QWidget):
         self._worker.progress.connect(
             lambda c, _t: self.validation_progress.setValue(c)
         )
-        self._worker.finished.connect(self._on_validation_finished)
+        self._worker.result_ready.connect(self._on_validation_finished)
         self._worker.error.connect(self._on_validation_error)
         self._worker.start()
 
