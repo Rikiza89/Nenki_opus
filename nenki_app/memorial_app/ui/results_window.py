@@ -325,6 +325,13 @@ class ResultsPage(QWidget):
         self.status_label.setStyleSheet("color: #7f8c8d;")
         btn_layout.addWidget(self.status_label, 1)
 
+        visual_btn = QPushButton("ビジュアル編集・出力")
+        visual_btn.setStyleSheet(
+            "background: #27ae60; color: white; padding: 8px 20px; font-weight: bold;"
+        )
+        visual_btn.clicked.connect(self._open_visual_editor)
+        btn_layout.addWidget(visual_btn)
+
         word_btn = QPushButton("Word出力（縦書き）")
         word_btn.setStyleSheet(
             "background: #2980b9; color: white; padding: 8px 20px; font-weight: bold;"
@@ -567,6 +574,48 @@ class ResultsPage(QWidget):
                     )
         except Exception as e:
             QMessageBox.critical(self, "エラー", f"文書生成に失敗しました:\n{e}")
+
+    def _open_visual_editor(self):
+        """Launch the visual editor window with the currently filtered results."""
+        if not self._results:
+            QMessageBox.information(
+                self, "情報",
+                "出力するデータがありません。\n年忌計算を先に実行してください。",
+            )
+            return
+
+        selected_nenki = {name for name, cb in self.nenki_checks.items() if cb.isChecked()}
+        filtered = [r for r in self._results if r[0].name in selected_nenki]
+        if not filtered:
+            QMessageBox.information(
+                self, "情報", "表示中のデータがありません。\n年忌の種類を選択してください。"
+            )
+            return
+
+        available_fields = self._collect_available_fields()
+        temp_groups: dict[str, list] = {}
+        for ann, name, _attrs, _pid in filtered:
+            from memorial_app.core.date_converter import format_year_kanji_era
+            death_year_era = format_year_kanji_era(ann.death_date)
+            key = f"{ann.name}|{ann.years_offset}|{death_year_era}"
+            temp_groups.setdefault(key, []).append(name)
+        group_count = len(temp_groups)
+        people_count = len(filtered)
+
+        dialog = DocumentSettingsDialog(
+            available_fields, self._target_year, group_count, people_count, parent=self
+        )
+        if not dialog.exec():
+            return
+
+        field_names = [f for f in dialog.get_selected_fields() if f != "年忌名"]
+        single_column = dialog.get_single_column()
+
+        from memorial_app.ui.visual_editor.visual_editor_window import VisualEditorWindow
+        editor = VisualEditorWindow(
+            filtered, self._target_year, field_names, single_column, self.db, parent=self
+        )
+        editor.show()
 
     def _export_word(self):
         self._do_export("word")

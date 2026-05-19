@@ -175,18 +175,28 @@ def _parse_gregorian(text: str) -> ParsedDate | None:
     if m:
         try:
             d = datetime.date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
-            return ParsedDate(d, format_date_era(d), text)
         except ValueError:
             pass
+        else:
+            try:
+                era_str = format_date_era(d)
+            except ValueError:
+                era_str = d.isoformat()  # pre-Meiji fallback
+            return ParsedDate(d, era_str, text)
 
     # YYYYMMDD (8 digits)
     m = re.match(r"^(\d{4})(\d{2})(\d{2})$", text.strip())
     if m:
         try:
             d = datetime.date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
-            return ParsedDate(d, format_date_era(d), text)
         except ValueError:
             pass
+        else:
+            try:
+                era_str = format_date_era(d)
+            except ValueError:
+                era_str = d.isoformat()  # pre-Meiji fallback
+            return ParsedDate(d, era_str, text)
 
     return None
 
@@ -281,9 +291,13 @@ def _parse_split_columns(
     if year >= 1868:
         try:
             d = datetime.date(year, month, day)
-            return ParsedDate(d, format_date_era(d), f"{year}年{month}月{day}日")
         except ValueError:
             return None
+        try:
+            era_str = format_date_era(d)
+        except ValueError:
+            era_str = d.isoformat()  # pre-Meiji fallback
+        return ParsedDate(d, era_str, f"{year}年{month}月{day}日")
 
     return None
 
