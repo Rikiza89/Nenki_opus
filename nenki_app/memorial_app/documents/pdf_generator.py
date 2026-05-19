@@ -25,6 +25,8 @@ class PdfGenerator:
         output_path: Path,
         field_names: list[str] | None = None,
         single_column: bool = True,
+        header_font_size: int | None = None,
+        entry_font_size: int | None = None,
     ) -> bool:
         """Create a PDF nenki document.
 
@@ -40,7 +42,8 @@ class PdfGenerator:
             False if generated via reportlab fallback (horizontal layout).
         """
         if self._try_docx2pdf(
-            sorted_data, title, output_path, field_names, single_column
+            sorted_data, title, output_path, field_names, single_column,
+            header_font_size, entry_font_size,
         ):
             return True
 
@@ -49,7 +52,8 @@ class PdfGenerator:
         return False
 
     def _try_docx2pdf(
-        self, sorted_data, title, output_path, field_names, single_column
+        self, sorted_data, title, output_path, field_names, single_column,
+        header_font_size=None, entry_font_size=None,
     ) -> bool:
         """Try to generate PDF by first creating a Word doc then converting."""
         try:
@@ -69,6 +73,8 @@ class PdfGenerator:
                 field_names=field_names,
                 single_column=single_column,
                 auto_pdf=False,
+                header_font_size=header_font_size,
+                entry_font_size=entry_font_size,
             )
 
             convert(str(tmp_docx), str(output_path))

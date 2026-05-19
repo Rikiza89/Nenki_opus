@@ -55,6 +55,8 @@ class WordGenerator:
         field_names: list[str] | None = None,
         single_column: bool = True,
         auto_pdf: bool = True,
+        header_font_size: int | None = None,
+        entry_font_size: int | None = None,
     ) -> bool:
         """Create a combined nenki document with vertical Japanese text.
 
@@ -95,11 +97,15 @@ class WordGenerator:
         field_widths = self._compute_field_widths(all_entries, field_names)
 
         if single_column:
+            h_size = header_font_size if header_font_size else 28
+            e_size = entry_font_size if entry_font_size else 18
             self._add_title(doc, title)
             self._build_single_column_content(
-                doc, sorted_data, field_names, field_widths
+                doc, sorted_data, field_names, field_widths, h_size, e_size
             )
         else:
+            h_size = header_font_size if header_font_size else 16
+            e_size = entry_font_size if entry_font_size else 11
             # Two columns on the section
             sectPr = section._sectPr
             cols = OxmlElement("w:cols")
@@ -111,7 +117,7 @@ class WordGenerator:
             self._add_textbox_title(doc, title)
 
             # Data flows naturally into 2 columns
-            self._build_dual_column_content(doc, sorted_data, field_widths)
+            self._build_dual_column_content(doc, sorted_data, field_widths, h_size, e_size)
 
         doc.save(str(output_path))
 
@@ -370,6 +376,8 @@ class WordGenerator:
         sorted_data: list,
         field_names: list[str] | None,
         field_widths: list[int],
+        header_size: int = 28,
+        entry_size: int = 18,
     ):
         """Single column layout: each nenki group with subtitle + entries."""
         for key, people_data in sorted_data:
@@ -378,7 +386,7 @@ class WordGenerator:
 
             subtitle = doc.add_paragraph()
             subtitle_run = subtitle.add_run(header_text)
-            subtitle_run.font.size = Pt(28)
+            subtitle_run.font.size = Pt(header_size)
             subtitle_run.font.bold = True
             subtitle_run.font.name = self.FONT_NAME
             subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -389,7 +397,7 @@ class WordGenerator:
                 text = self.FIELD_SEP + self._format_aligned_entry(entry, field_widths)
                 para = doc.add_paragraph()
                 run = para.add_run(text)
-                run.font.size = Pt(18)
+                run.font.size = Pt(entry_size)
                 run.font.name = self.FONT_NAME
                 para.paragraph_format.left_indent = Inches(1.5)
                 para.paragraph_format.space_after = Pt(8)
@@ -402,6 +410,8 @@ class WordGenerator:
         doc: Document,
         sorted_data: list,
         field_widths: list[int],
+        header_size: int = 16,
+        entry_size: int = 11,
     ):
         """Dual column layout: data flows into Word's native 2 columns."""
         for key, people_data in sorted_data:
@@ -410,7 +420,7 @@ class WordGenerator:
 
             subtitle = doc.add_paragraph()
             subtitle_run = subtitle.add_run(header_text)
-            subtitle_run.font.size = Pt(16)
+            subtitle_run.font.size = Pt(header_size)
             subtitle_run.font.bold = True
             subtitle_run.font.name = self.FONT_NAME
             subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -422,7 +432,7 @@ class WordGenerator:
                 text = self.FIELD_SEP + self._format_aligned_entry(entry, field_widths)
                 para = doc.add_paragraph()
                 run = para.add_run(text)
-                run.font.size = Pt(11)
+                run.font.size = Pt(entry_size)
                 run.font.name = self.FONT_NAME
                 para.paragraph_format.left_indent = Inches(0.3)
                 para.paragraph_format.space_after = Pt(4)

@@ -125,9 +125,13 @@ class VisualEditorWindow(QMainWindow):
             {k for _, _, attrs, _ in self._results for k in attrs}
         )
 
+        # Match Word's per-mode default font sizes so preview = export on first open
+        default_header, default_entry = (28, 18) if single_column else (16, 11)
         self._layout = LayoutSettings(
             title=format_nenki_title(target_year),
             single_column=single_column,
+            header_font_size=default_header,
+            entry_font_size=default_entry,
             field_names=list(field_names),
         )
 
@@ -528,7 +532,12 @@ class VisualEditorWindow(QMainWindow):
         self._schedule_refresh()
 
     def _on_col_changed(self):
-        self._layout.single_column = bool(self._col_combo.currentData())
+        single = bool(self._col_combo.currentData())
+        self._layout.single_column = single
+        # Sync spinners to the mode's Word defaults so preview matches export
+        default_header, default_entry = (28, 18) if single else (16, 11)
+        self._header_spin.setValue(default_header)
+        self._entry_spin.setValue(default_entry)
         self._schedule_refresh()
 
     def _on_font_changed(self):
@@ -604,6 +613,8 @@ class VisualEditorWindow(QMainWindow):
                 field_names=self._layout.field_names,
                 single_column=self._layout.single_column,
                 auto_pdf=False,
+                header_font_size=self._layout.header_font_size,
+                entry_font_size=self._layout.entry_font_size,
             )
             QMessageBox.information(self, "完了", f"Word文書を保存しました:\n{path}")
         except Exception as exc:
@@ -626,6 +637,8 @@ class VisualEditorWindow(QMainWindow):
                 Path(path),
                 field_names=self._layout.field_names,
                 single_column=self._layout.single_column,
+                header_font_size=self._layout.header_font_size,
+                entry_font_size=self._layout.entry_font_size,
             )
             QMessageBox.information(self, "完了", f"PDFを保存しました:\n{path}")
         except Exception as exc:
