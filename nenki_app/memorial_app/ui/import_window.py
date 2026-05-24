@@ -246,7 +246,10 @@ class ImportPage(QWidget):
         self.file_label.setStyleSheet("color: #7f8c8d;")
         file_layout.addWidget(self.file_label, 1)
         browse_btn = QPushButton("ファイルを選択")
-        browse_btn.setStyleSheet("padding: 8px 16px;")
+        browse_btn.setStyleSheet(
+            "background: #2980b9; color: white; padding: 8px 20px; "
+            "font-size: 14px; font-weight: bold; border-radius: 4px;"
+        )
         browse_btn.clicked.connect(self._browse_file)
         file_layout.addWidget(browse_btn)
         layout.addWidget(file_group)
@@ -634,6 +637,7 @@ class ImportPage(QWidget):
                 self._worker.result_ready.disconnect()
                 self._worker.error.disconnect()
                 self._worker.progress.disconnect()
+                self._worker.finished.disconnect()
             except RuntimeError:
                 pass
             self._worker.quit()
@@ -1025,18 +1029,21 @@ class ImportPage(QWidget):
         self.revalidate_btn.setEnabled(False)
         self.delete_errors_btn.setEnabled(False)
 
-        self._worker = ImportWorker(
-            self.db, self.current_df, self.mapping, self.source_path
-        )
-        self._worker.progress.connect(
-            lambda c, _t: self.validation_progress.setValue(c)
-        )
-        self._worker.result_ready.connect(self._on_validation_finished)
-        self._worker.error.connect(self._on_validation_error)
-        self._worker.start()
+        worker = ImportWorker(self.db, self.current_df, self.mapping, self.source_path)
+        worker.progress.connect(lambda c, _t: self.validation_progress.setValue(c))
+        worker.result_ready.connect(self._on_validation_finished)
+        worker.error.connect(self._on_validation_error)
+        # Clear self._worker only after the C++ thread has fully exited, so Qt
+        # never destroys the QThread object while its OS thread is still running.
+        worker.finished.connect(lambda w=worker: self._on_validation_worker_done(w))
+        self._worker = worker
+        worker.start()
+
+    def _on_validation_worker_done(self, worker: "ImportWorker"):
+        if self._worker is worker:
+            self._worker = None
 
     def _on_validation_finished(self, result: ValidationResult):
-        self._worker = None
         self._validation_result = result
         self.validation_progress.setValue(self.validation_progress.maximum())
         self._render_validation_summary()
@@ -1058,7 +1065,6 @@ class ImportPage(QWidget):
             self.error_file_label.setVisible(False)
 
     def _on_validation_error(self, error_msg: str):
-        self._worker = None
         self.validation_status.setText(f"検証エラー: {error_msg}")
         self.validation_status.setStyleSheet(
             "color: #e74c3c; font-size: 13px; padding: 8px;"
