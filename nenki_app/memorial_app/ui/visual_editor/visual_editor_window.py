@@ -48,6 +48,110 @@ try:
 except ImportError:
     _HAS_WEBENGINE = False
 
+
+class _PainterPreview(QWidget):
+    """Visual QPainter-based preview used when QWebEngineView is unavailable.
+
+    Renders a simplified but genuinely visual representation of the tategaki
+    document: group headers in a shaded band, entries listed below, right-to-left
+    column order, with a 「簡易プレビュー」 watermark so users know it is not the
+    exact final layout.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._grouped: list = []
+        self._layout_settings = None
+        self.setMinimumSize(320, 400)
+        self.setAutoFillBackground(True)
+
+    def update_content(self, grouped: list, layout_settings) -> None:
+        self._grouped = grouped
+        self._layout_settings = layout_settings
+        self.update()
+
+    def paintEvent(self, event):
+        from PySide6.QtGui import QPainter, QColor, QFont, QPen, QBrush
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.TextAntialiasing)
+        painter.fillRect(self.rect(), QColor("#FFFFFF"))
+
+        if not self._grouped or not self._layout_settings:
+            painter.setPen(QPen(QColor("#bdc3c7")))
+            painter.drawText(self.rect(), Qt.AlignCenter, "プレビューデータなし")
+            painter.end()
+            return
+
+        margin = 16
+        x = margin
+        y = margin
+        w = self.width() - 2 * margin
+
+        # Title
+        title = self._layout_settings.title or ""
+        if title:
+            tf = QFont()
+            tf.setPointSize(15)
+            tf.setBold(True)
+            painter.setFont(tf)
+            painter.setPen(QPen(QColor("#2c3e50")))
+            painter.drawText(x, y + 18, title)
+            y += 30
+
+        # Separator line
+        painter.setPen(QPen(QColor("#bdc3c7"), 1))
+        painter.drawLine(x, y, x + w, y)
+        y += 10
+
+        # Groups
+        hf = QFont()
+        hf.setPointSize(13)
+        hf.setBold(True)
+        ef = QFont()
+        ef.setPointSize(11)
+
+        header_bg = QColor("#eaf2f8")
+        header_pen = QPen(QColor("#2980b9"))
+        entry_pen = QPen(QColor("#2c3e50"))
+
+        for group_key, entries in self._grouped:
+            group_name = group_key.split("|")[0]
+
+            # Group header band
+            painter.setFont(hf)
+            painter.setBrush(QBrush(header_bg))
+            painter.setPen(Qt.NoPen)
+            painter.drawRect(x, y, w, 24)
+            painter.setPen(header_pen)
+            painter.drawText(x + 6, y + 17, f"【{group_name}】")
+            y += 28
+
+            # Entries
+            painter.setFont(ef)
+            painter.setPen(entry_pen)
+            for fv, _ in entries:
+                text = "　".join(str(v) for v in fv if v)
+                painter.drawText(x + 16, y + 15, text)
+                y += 20
+                if y > self.height() - margin - 20:
+                    painter.drawText(x + 16, y, "…（以下省略）")
+                    painter.end()
+                    return
+            y += 8
+
+        # Watermark
+        wf = QFont()
+        wf.setPointSize(9)
+        painter.setFont(wf)
+        painter.setPen(QPen(QColor("#bdc3c7")))
+        painter.drawText(
+            self.rect().adjusted(0, 0, -6, -6),
+            Qt.AlignBottom | Qt.AlignRight,
+            "簡易プレビュー（WebEngineなし）",
+        )
+        painter.end()
+
 from memorial_app.database.db_manager import DatabaseManager, DatabaseError
 from memorial_app.core.date_converter import (
     format_date_kanji_era,
@@ -231,14 +335,9 @@ class VisualEditorWindow(QMainWindow):
             self._webview = QWebEngineView()
             splitter.addWidget(self._webview)
         else:
-            self._fallback_label = QLabel("(QWebEngineView not available)")
-            self._fallback_label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
-            self._fallback_label.setWordWrap(True)
-            self._fallback_label.setStyleSheet(
-                "background:white;padding:16px;font-family:monospace;"
-            )
+            self._painter_preview = _PainterPreview()
             scroll = QScrollArea()
-            scroll.setWidget(self._fallback_label)
+            scroll.setWidget(self._painter_preview)
             scroll.setWidgetResizable(True)
             splitter.addWidget(scroll)
 
@@ -568,17 +667,11 @@ class VisualEditorWindow(QMainWindow):
 
     def _do_refresh(self):
         grouped = self._build_grouped_data()
-        html = build_html(grouped, self._layout)
         if _HAS_WEBENGINE:
+            html = build_html(grouped, self._layout)
             self._webview.setHtml(html)
         else:
-            lines = [self._layout.title, ""]
-            for key, entries in grouped:
-                lines.append(f"【{key.split('|')[0]}】")
-                for fv, _ in entries:
-                    lines.append("　".join(str(v) for v in fv))
-                lines.append("")
-            self._fallback_label.setText("\n".join(lines))
+            self._painter_preview.update_content(grouped, self._layout)
 
     # ------------------------------------------------------------------ #
     # Export                                                               #

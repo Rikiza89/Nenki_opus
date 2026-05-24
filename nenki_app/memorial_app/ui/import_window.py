@@ -1,5 +1,5 @@
-"""Data import page - Excel/CSV file import with multi-step validation,
-in-UI error correction and a checkpoint at every stage.
+"""Data import page — Excel/CSV import with a single pre-validation settings
+dialog, step progress indicator, and automatic error-Excel generation.
 """
 
 from pathlib import Path
@@ -47,12 +47,15 @@ from memorial_app.importer.validation_pipeline import (
     ErrorRow,
     import_validated_rows,
     export_error_rows,
+    export_annotated_copy,
 )
 
 
+# ─── Background worker ────────────────────────────────────────────────────
+
 class ImportWorker(QThread):
     progress = Signal(int, int)
-    result_ready = Signal(object)  # renamed: avoids shadowing QThread.finished
+    result_ready = Signal(object)
     error = Signal(str)
 
     def __init__(self, db, df, mapping, source_path):
@@ -73,32 +76,120 @@ class ImportWorker(QThread):
             self.error.emit(str(e))
 
 
+# ─── Pre-import settings dialog (Feature 1) ───────────────────────────────
+
+class ImportSettingsDialog(QDialog):
+    """Single dialog shown *before* validation starts.
+
+    Captures:
+    - error_mode  : "skip" | "manual"
+    - duplicate_mode : "overwrite" | "insert" | "skip"
+    """
+
+    def __init__(self, row_count: int, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("インポート設定")
+        self.setMinimumWidth(520)
+        self.setModal(True)
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+
+        info = QLabel(
+            f"全 {row_count} 行のデータを検証します。\n"
+            "処理方法を選択してから「検証を開始する」を押してください。"
+        )
+        info.setWordWrap(True)
+        info.setStyleSheet(
+            "font-size: 14px; padding: 12px; "
+            "background: #eaf2f8; border-radius: 6px; color: #2c3e50;"
+        )
+        layout.addWidget(info)
+
+        # ── Error row handling ──
+        err_group = QGroupBox("エラー行の処理")
+        err_layout = QVBoxLayout(err_group)
+        err_layout.setSpacing(8)
+        self._err_skip = QRadioButton(
+            "エラー行をスキップする（自動で除外します）"
+        )
+        self._err_manual = QRadioButton(
+            "修正画面を表示する（エラー行を手動で修正できます）"
+        )
+        self._err_skip.setChecked(True)
+        err_layout.addWidget(self._err_skip)
+        err_layout.addWidget(self._err_manual)
+        layout.addWidget(err_group)
+
+        # ── Duplicate handling ──
+        dup_group = QGroupBox(
+            "重複データの処理\n（同じ氏名・没年月日がすでに登録されている場合）"
+        )
+        dup_layout = QVBoxLayout(dup_group)
+        dup_layout.setSpacing(8)
+        self._dup_overwrite = QRadioButton("既存のデータを上書きする")
+        self._dup_insert = QRadioButton("新規データとして追加する")
+        self._dup_skip = QRadioButton("重複行をスキップする（既存データを変更しない）")
+        self._dup_overwrite.setChecked(True)
+        dup_layout.addWidget(self._dup_overwrite)
+        dup_layout.addWidget(self._dup_insert)
+        dup_layout.addWidget(self._dup_skip)
+        layout.addWidget(dup_group)
+
+        note = QLabel(
+            "※ エラーファイルが存在する場合、エラー行を含む確認用Excelファイルが\n"
+            "　 元のファイルと同じフォルダに自動保存されます。"
+        )
+        note.setStyleSheet("color: #7f8c8d; font-size: 12px; padding: 4px;")
+        note.setWordWrap(True)
+        layout.addWidget(note)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.button(QDialogButtonBox.Ok).setText("検証を開始する")
+        buttons.button(QDialogButtonBox.Cancel).setText("戻る")
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    @property
+    def error_mode(self) -> str:
+        return "skip" if self._err_skip.isChecked() else "manual"
+
+    @property
+    def duplicate_mode(self) -> str:
+        if self._dup_overwrite.isChecked():
+            return "overwrite"
+        if self._dup_insert.isChecked():
+            return "insert"
+        return "skip"
+
+
+# ─── Duplicate resolution dialog (kept for per-row overrides) ─────────────
+
 class DuplicateResolutionDialog(QDialog):
     """Lets the user resolve every duplicate-against-DB row at once, with the
-    decisions applied atomically only when the user runs the import. Nothing
-    is written to the DB from this dialog itself.
+    decisions applied atomically only when the user runs the import.
     """
 
     def __init__(self, duplicate_rows: list[ValidatedRow], parent=None):
         super().__init__(parent)
-        self.setWindowTitle("重複データの処理")
+        self.setWindowTitle("重複データの処理（個別変更）")
         self.setMinimumWidth(700)
         self.setMinimumHeight(450)
         self._duplicates = duplicate_rows
         self._choices: dict[int, str] = {
-            i: "overwrite" for i in range(len(duplicate_rows))
+            i: (r.duplicate_action or "overwrite") for i, r in enumerate(duplicate_rows)
         }
 
         layout = QVBoxLayout(self)
         info = QLabel(
             f"既存データと一致する {len(duplicate_rows)} 件のレコードがあります。\n"
-            "各行について処理方法を選んでください。"
+            "各行の処理方法を変更できます（インポート設定での一括設定を上書きします）。"
         )
         info.setWordWrap(True)
         info.setStyleSheet("font-size: 13px; color: #2c3e50; padding: 4px;")
         layout.addWidget(info)
 
-        # Bulk actions
         bulk = QHBoxLayout()
         bulk.addWidget(QLabel("一括設定:"))
         for label, action in (
@@ -112,7 +203,6 @@ class DuplicateResolutionDialog(QDialog):
         bulk.addStretch()
         layout.addLayout(bulk)
 
-        # Per-row choices
         self.table = QTableWidget()
         self.table.setColumnCount(5)
         self.table.setHorizontalHeaderLabels(
@@ -127,9 +217,10 @@ class DuplicateResolutionDialog(QDialog):
             self.table.setItem(i, 0, QTableWidgetItem(row.name))
             self.table.setItem(i, 1, QTableWidgetItem(row.era_display))
             group = QButtonGroup(self)
+            current_action = row.duplicate_action or "overwrite"
             for col, action in ((2, "overwrite"), (3, "insert"), (4, "skip")):
                 rb = QRadioButton()
-                rb.setChecked(action == "overwrite")
+                rb.setChecked(action == current_action)
                 rb.toggled.connect(
                     lambda checked, idx=i, a=action: self._on_choice(idx, a, checked)
                 )
@@ -166,33 +257,35 @@ class DuplicateResolutionDialog(QDialog):
             self._choices[idx] = action
 
     def apply_to(self, duplicate_rows: list[ValidatedRow]):
-        """Stamp the user's choices onto the ValidatedRow objects in-place."""
         for i, row in enumerate(duplicate_rows):
             row.duplicate_action = self._choices.get(i, "overwrite")
 
 
+# ─── Main import page ─────────────────────────────────────────────────────
+
 class ImportPage(QWidget):
-    """Multi-step import wizard with checkpoints at each stage.
+    """Multi-step import wizard.
 
     Steps:
         1. File selection + sheet selection
         2. Column mapping (name, date, buddhist_name)
-        3. Extra column remapping (map to existing DB columns or import as-is)
-        4. Data preview
-        5. Validation + inline error correction
-        6. Import confirmation (with duplicate resolution)
+        3. Extra column remapping
+        4. Data preview  → ImportSettingsDialog before validation
+        5. Validation + inline error correction (manual mode only)
+        6. Import confirmation
         7. Result
     """
 
     STEP_NAMES = [
-        "ステップ 1/7: ファイル・シート選択",
-        "ステップ 2/7: 基本列マッピング",
-        "ステップ 3/7: 追加列の統合設定",
-        "ステップ 4/7: データプレビュー",
-        "ステップ 5/7: データ検証・修正",
-        "ステップ 6/7: インポート確認",
-        "ステップ 7/7: 完了",
+        "ファイル・シート選択",
+        "基本列マッピング",
+        "追加列の統合設定",
+        "データプレビュー",
+        "データ検証・修正",
+        "インポート確認",
+        "完了",
     ]
+    _TOTAL_STEPS = 7
 
     def __init__(self, db_manager: DatabaseManager):
         super().__init__()
@@ -206,6 +299,7 @@ class ImportPage(QWidget):
         self._mapping_signals_connected = False
         self._validation_result: ValidationResult | None = None
         self._remap_combos: dict[str, QComboBox] = {}
+        self._import_settings: ImportSettingsDialog | None = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -214,11 +308,14 @@ class ImportPage(QWidget):
         header.setStyleSheet("font-size: 24px; font-weight: bold; color: #2c3e50;")
         layout.addWidget(header)
 
+        # Step progress indicator
         self.step_label = QLabel("")
         self.step_label.setStyleSheet(
-            "font-size: 13px; color: #3498db; font-weight: bold; "
-            "padding: 8px; background: #eaf2f8; border-radius: 4px;"
+            "font-size: 13px; color: #2c3e50; "
+            "padding: 10px 12px; background: #eaf2f8; border-radius: 6px; "
+            "line-height: 1.6;"
         )
+        self.step_label.setWordWrap(True)
         layout.addWidget(self.step_label)
 
         self.steps = QStackedWidget()
@@ -234,7 +331,7 @@ class ImportPage(QWidget):
 
         self._go_to_step(0)
 
-    # ─── Step 1: File Selection + Sheet Selection ───
+    # ─── Step builders ────────────────────────────────────────────────────
 
     def _build_step1_file_and_sheet(self):
         page = QWidget()
@@ -243,10 +340,12 @@ class ImportPage(QWidget):
         file_group = QGroupBox("ファイルを選択してください")
         file_layout = QHBoxLayout(file_group)
         self.file_label = QLabel("ファイルが選択されていません")
-        self.file_label.setStyleSheet("color: #7f8c8d;")
+        self.file_label.setStyleSheet("color: #7f8c8d; font-size: 14px;")
         file_layout.addWidget(self.file_label, 1)
-        browse_btn = QPushButton("ファイルを選択")
-        browse_btn.setStyleSheet("padding: 8px 16px;")
+        browse_btn = QPushButton("ファイルを選択...")
+        browse_btn.setStyleSheet(
+            "background: #3498db; color: white; padding: 10px 20px; font-size: 14px;"
+        )
         browse_btn.clicked.connect(self._browse_file)
         file_layout.addWidget(browse_btn)
         layout.addWidget(file_group)
@@ -256,21 +355,21 @@ class ImportPage(QWidget):
         self.sheet_hint = QLabel(
             "このファイルには複数のシートがあります。インポートするシートを選んでください。"
         )
-        self.sheet_hint.setStyleSheet("color: #2c3e50; font-size: 12px;")
+        self.sheet_hint.setStyleSheet("color: #2c3e50; font-size: 13px;")
         self.sheet_hint.setWordWrap(True)
         sheet_layout.addWidget(self.sheet_hint)
         self.sheet_list = QListWidget()
         self.sheet_list.currentRowChanged.connect(self._on_sheet_selected)
         sheet_layout.addWidget(self.sheet_list)
         self.sheet_detail_label = QLabel("")
-        self.sheet_detail_label.setStyleSheet("color: #7f8c8d; font-size: 12px;")
+        self.sheet_detail_label.setStyleSheet("color: #7f8c8d; font-size: 13px;")
         sheet_layout.addWidget(self.sheet_detail_label)
         layout.addWidget(self.sheet_group)
         self.sheet_group.setVisible(False)
 
         self.single_sheet_label = QLabel("")
         self.single_sheet_label.setStyleSheet(
-            "color: #27ae60; font-size: 13px; padding: 8px; "
+            "color: #27ae60; font-size: 14px; padding: 10px; "
             "background: #eafaf1; border-radius: 4px;"
         )
         self.single_sheet_label.setVisible(False)
@@ -278,34 +377,28 @@ class ImportPage(QWidget):
 
         nav = QHBoxLayout()
         nav.addStretch()
-        self.step1_next = QPushButton("次へ: 列マッピング →")
+        self.step1_next = QPushButton("次へ: 列マッピング  →")
         self.step1_next.setStyleSheet(
-            "background: #3498db; color: white; padding: 10px 24px; font-size: 14px;"
+            "background: #3498db; color: white; padding: 12px 28px; "
+            "font-size: 15px; font-weight: bold;"
         )
         self.step1_next.setEnabled(False)
         self.step1_next.clicked.connect(self._step1_next)
         nav.addWidget(self.step1_next)
         layout.addLayout(nav)
         layout.addStretch()
-
         self.steps.addWidget(page)
-
-    # ─── Step 2: Column Mapping ───
 
     def _build_step2_column_mapping(self):
         page = QWidget()
         layout = QVBoxLayout(page)
 
-        info = QLabel(
-            "基本列マッピングを確認してください（自動検出結果を変更できます）"
-        )
-        info.setStyleSheet("font-size: 13px; color: #2c3e50; font-weight: bold;")
+        info = QLabel("基本列マッピングを確認してください（自動検出結果を変更できます）")
+        info.setStyleSheet("font-size: 14px; color: #2c3e50; font-weight: bold;")
         layout.addWidget(info)
 
         self.mapping_sheet_info = QLabel("")
-        self.mapping_sheet_info.setStyleSheet(
-            "color: #7f8c8d; font-size: 12px; padding: 4px;"
-        )
+        self.mapping_sheet_info.setStyleSheet("color: #7f8c8d; font-size: 13px; padding: 4px;")
         layout.addWidget(self.mapping_sheet_info)
 
         mapping_group = QGroupBox("基本列マッピング")
@@ -329,36 +422,32 @@ class ImportPage(QWidget):
 
         nav = QHBoxLayout()
         back_btn = QPushButton("← 戻る")
-        back_btn.setStyleSheet("padding: 8px 16px;")
+        back_btn.setStyleSheet("padding: 10px 20px;")
         back_btn.clicked.connect(lambda: self._go_to_step(0))
         nav.addWidget(back_btn)
         nav.addStretch()
-        self.step2_next = QPushButton("次へ →")
+        self.step2_next = QPushButton("次へ  →")
         self.step2_next.setStyleSheet(
-            "background: #3498db; color: white; padding: 10px 24px; font-size: 14px;"
+            "background: #3498db; color: white; padding: 12px 28px; "
+            "font-size: 15px; font-weight: bold;"
         )
         self.step2_next.clicked.connect(self._step2_next)
         nav.addWidget(self.step2_next)
         layout.addLayout(nav)
-
         self.steps.addWidget(page)
-
-    # ─── Step 3: Extra Column Remapping ───
 
     def _build_step3_column_remap(self):
         page = QWidget()
         layout = QVBoxLayout(page)
 
         self.remap_info = QLabel("")
-        self.remap_info.setStyleSheet(
-            "font-size: 13px; color: #2c3e50; font-weight: bold;"
-        )
+        self.remap_info.setStyleSheet("font-size: 14px; color: #2c3e50; font-weight: bold;")
         self.remap_info.setWordWrap(True)
         layout.addWidget(self.remap_info)
 
         self.remap_hint = QLabel("")
         self.remap_hint.setStyleSheet(
-            "color: #7f8c8d; font-size: 12px; padding: 8px; "
+            "color: #7f8c8d; font-size: 13px; padding: 8px; "
             "background: #fef9e7; border: 1px solid #f9e79f; border-radius: 4px;"
         )
         self.remap_hint.setWordWrap(True)
@@ -383,28 +472,26 @@ class ImportPage(QWidget):
 
         nav = QHBoxLayout()
         back_btn = QPushButton("← 戻る")
-        back_btn.setStyleSheet("padding: 8px 16px;")
+        back_btn.setStyleSheet("padding: 10px 20px;")
         back_btn.clicked.connect(lambda: self._go_to_step(1))
         nav.addWidget(back_btn)
         nav.addStretch()
-        next_btn = QPushButton("次へ: データプレビュー →")
+        next_btn = QPushButton("次へ: データプレビュー  →")
         next_btn.setStyleSheet(
-            "background: #3498db; color: white; padding: 10px 24px; font-size: 14px;"
+            "background: #3498db; color: white; padding: 12px 28px; "
+            "font-size: 15px; font-weight: bold;"
         )
         next_btn.clicked.connect(self._step3_next)
         nav.addWidget(next_btn)
         layout.addLayout(nav)
-
         self.steps.addWidget(page)
-
-    # ─── Step 4: Data Preview ───
 
     def _build_step4_data_preview(self):
         page = QWidget()
         layout = QVBoxLayout(page)
 
         info = QLabel("インポートするデータを確認してください")
-        info.setStyleSheet("font-size: 13px; color: #2c3e50; font-weight: bold;")
+        info.setStyleSheet("font-size: 14px; color: #2c3e50; font-weight: bold;")
         layout.addWidget(info)
 
         self.preview_table = QTableWidget()
@@ -417,33 +504,31 @@ class ImportPage(QWidget):
         layout.addWidget(self.preview_table)
 
         self.preview_info = QLabel("")
-        self.preview_info.setStyleSheet("color: #7f8c8d; font-size: 12px;")
+        self.preview_info.setStyleSheet("color: #7f8c8d; font-size: 13px;")
         layout.addWidget(self.preview_info)
 
         nav = QHBoxLayout()
         back_btn = QPushButton("← 戻る")
-        back_btn.setStyleSheet("padding: 8px 16px;")
+        back_btn.setStyleSheet("padding: 10px 20px;")
         back_btn.clicked.connect(self._step4_back)
         nav.addWidget(back_btn)
         nav.addStretch()
-        next_btn = QPushButton("次へ: 検証実行 →")
+        next_btn = QPushButton("検証の設定と開始  →")
         next_btn.setStyleSheet(
-            "background: #3498db; color: white; padding: 10px 24px; font-size: 14px;"
+            "background: #3498db; color: white; padding: 12px 28px; "
+            "font-size: 15px; font-weight: bold;"
         )
         next_btn.clicked.connect(self._step4_next)
         nav.addWidget(next_btn)
         layout.addLayout(nav)
-
         self.steps.addWidget(page)
-
-    # ─── Step 5: Validation + In-UI Error Editor ───
 
     def _build_step5_validation(self):
         page = QWidget()
         layout = QVBoxLayout(page)
 
         info = QLabel("データを検証中...")
-        info.setStyleSheet("font-size: 13px; color: #2c3e50; font-weight: bold;")
+        info.setStyleSheet("font-size: 14px; color: #2c3e50; font-weight: bold;")
         layout.addWidget(info)
 
         self.validation_progress = QProgressBar()
@@ -451,20 +536,29 @@ class ImportPage(QWidget):
 
         self.validation_status = QLabel("")
         self.validation_status.setWordWrap(True)
-        self.validation_status.setStyleSheet("font-size: 13px; padding: 8px;")
+        self.validation_status.setStyleSheet("font-size: 14px; padding: 8px;")
         layout.addWidget(self.validation_status)
+
+        # Auto-created error file banner
+        self._error_file_banner = QLabel("")
+        self._error_file_banner.setWordWrap(True)
+        self._error_file_banner.setStyleSheet(
+            "font-size: 13px; color: #8e44ad; padding: 8px 12px; "
+            "background: #f5eef8; border: 1px solid #d7bde2; border-radius: 4px;"
+        )
+        self._error_file_banner.setVisible(False)
+        layout.addWidget(self._error_file_banner)
 
         error_label = QLabel(
             "エラー行（セルをダブルクリックして修正できます。修正後「再検証」を押してください）:"
         )
-        error_label.setStyleSheet("font-weight: bold; margin-top: 8px;")
+        error_label.setStyleSheet("font-weight: bold; margin-top: 8px; font-size: 13px;")
         error_label.setWordWrap(True)
         layout.addWidget(error_label)
 
         self.error_table = QTableWidget()
         self.error_table.horizontalHeader().setStretchLastSection(True)
         self.error_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        # User can edit raw cells inline; the error column stays read-only.
         self.error_table.setEditTriggers(
             QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed
         )
@@ -473,20 +567,20 @@ class ImportPage(QWidget):
         error_actions = QHBoxLayout()
         self.revalidate_btn = QPushButton("修正後に再検証")
         self.revalidate_btn.setStyleSheet(
-            "background: #16a085; color: white; padding: 6px 14px;"
+            "background: #16a085; color: white; padding: 8px 16px;"
         )
         self.revalidate_btn.clicked.connect(self._revalidate_errors)
         self.revalidate_btn.setEnabled(False)
         error_actions.addWidget(self.revalidate_btn)
 
         self.export_errors_btn = QPushButton("エラー行をExcelに出力")
-        self.export_errors_btn.setStyleSheet("padding: 6px 14px;")
+        self.export_errors_btn.setStyleSheet("padding: 8px 16px;")
         self.export_errors_btn.setEnabled(False)
         self.export_errors_btn.clicked.connect(self._export_errors)
         error_actions.addWidget(self.export_errors_btn)
 
         self.delete_errors_btn = QPushButton("選択行を破棄")
-        self.delete_errors_btn.setStyleSheet("padding: 6px 14px;")
+        self.delete_errors_btn.setStyleSheet("padding: 8px 16px;")
         self.delete_errors_btn.setEnabled(False)
         self.delete_errors_btn.clicked.connect(self._delete_selected_errors)
         error_actions.addWidget(self.delete_errors_btn)
@@ -496,43 +590,40 @@ class ImportPage(QWidget):
 
         nav = QHBoxLayout()
         back_btn = QPushButton("← 戻る")
-        back_btn.setStyleSheet("padding: 8px 16px;")
+        back_btn.setStyleSheet("padding: 10px 20px;")
         back_btn.clicked.connect(lambda: self._go_to_step(3))
         nav.addWidget(back_btn)
         nav.addStretch()
-        self.step5_next = QPushButton("次へ: インポート確認 →")
+        self.step5_next = QPushButton("次へ: インポート確認  →")
         self.step5_next.setStyleSheet(
-            "background: #3498db; color: white; padding: 10px 24px; font-size: 14px;"
+            "background: #3498db; color: white; padding: 12px 28px; "
+            "font-size: 15px; font-weight: bold;"
         )
         self.step5_next.setEnabled(False)
         self.step5_next.clicked.connect(self._step5_next)
         nav.addWidget(self.step5_next)
         layout.addLayout(nav)
-
         self.steps.addWidget(page)
-
-    # ─── Step 6: Confirm Import ───
 
     def _build_step6_confirm_import(self):
         page = QWidget()
         layout = QVBoxLayout(page)
 
         info = QLabel("インポート内容を最終確認してください")
-        info.setStyleSheet("font-size: 13px; color: #2c3e50; font-weight: bold;")
+        info.setStyleSheet("font-size: 14px; color: #2c3e50; font-weight: bold;")
         layout.addWidget(info)
 
         self.confirm_summary = QLabel("")
         self.confirm_summary.setWordWrap(True)
         self.confirm_summary.setStyleSheet(
             "font-size: 14px; padding: 16px; background: #f8f9fa; "
-            "border: 1px solid #dee2e6; border-radius: 4px;"
+            "border: 1px solid #dee2e6; border-radius: 6px; line-height: 1.7;"
         )
         layout.addWidget(self.confirm_summary)
 
-        # Duplicate resolution button (visible when duplicates exist)
-        self.dup_btn = QPushButton("重複データの処理を確認")
+        self.dup_btn = QPushButton("重複データの処理を個別変更...")
         self.dup_btn.setStyleSheet(
-            "background: #f39c12; color: white; padding: 8px 16px;"
+            "background: #f39c12; color: white; padding: 10px 18px;"
         )
         self.dup_btn.clicked.connect(self._open_duplicate_dialog)
         self.dup_btn.setVisible(False)
@@ -551,26 +642,23 @@ class ImportPage(QWidget):
 
         nav = QHBoxLayout()
         back_btn = QPushButton("← 戻る")
-        back_btn.setStyleSheet("padding: 8px 16px;")
+        back_btn.setStyleSheet("padding: 10px 20px;")
         back_btn.clicked.connect(lambda: self._go_to_step(4))
         nav.addWidget(back_btn)
         nav.addStretch()
         cancel_btn = QPushButton("キャンセル")
-        cancel_btn.setStyleSheet("padding: 8px 16px;")
+        cancel_btn.setStyleSheet("padding: 10px 18px;")
         cancel_btn.clicked.connect(lambda: self._go_to_step(0))
         nav.addWidget(cancel_btn)
         self.import_btn = QPushButton("インポート実行")
         self.import_btn.setStyleSheet(
-            "background: #27ae60; color: white; padding: 10px 24px; "
-            "font-size: 14px; font-weight: bold;"
+            "background: #27ae60; color: white; padding: 12px 28px; "
+            "font-size: 15px; font-weight: bold;"
         )
         self.import_btn.clicked.connect(self._execute_import)
         nav.addWidget(self.import_btn)
         layout.addLayout(nav)
-
         self.steps.addWidget(page)
-
-    # ─── Step 7: Results ───
 
     def _build_step7_result(self):
         page = QWidget()
@@ -578,7 +666,7 @@ class ImportPage(QWidget):
 
         self.result_icon = QLabel("")
         self.result_icon.setAlignment(Qt.AlignCenter)
-        self.result_icon.setStyleSheet("font-size: 48px; padding: 16px;")
+        self.result_icon.setStyleSheet("font-size: 56px; padding: 20px;")
         layout.addWidget(self.result_icon)
 
         self.result_label = QLabel("")
@@ -601,23 +689,31 @@ class ImportPage(QWidget):
         nav.addStretch()
         new_import_btn = QPushButton("新しいインポートを開始")
         new_import_btn.setStyleSheet(
-            "background: #3498db; color: white; padding: 10px 24px; font-size: 14px;"
+            "background: #3498db; color: white; padding: 12px 28px; "
+            "font-size: 15px; font-weight: bold;"
         )
         new_import_btn.clicked.connect(self._reset)
         nav.addWidget(new_import_btn)
         nav.addStretch()
         layout.addLayout(nav)
-
         self.steps.addWidget(page)
 
-    # ─── Step Navigation ───
+    # ─── Step navigation ──────────────────────────────────────────────────
 
     def _go_to_step(self, step: int):
-        self.step_label.setText(self.STEP_NAMES[step])
+        circles = "  ".join(
+            "●" if i <= step else "○" for i in range(self._TOTAL_STEPS)
+        )
+        self.step_label.setText(
+            f"{circles}\n"
+            f"ステップ {step + 1} / {self._TOTAL_STEPS}：{self.STEP_NAMES[step]}"
+        )
         self.steps.setCurrentIndex(step)
 
     def refresh(self):
         pass
+
+    # ─── Worker management ────────────────────────────────────────────────
 
     def _stop_worker(self):
         if self._worker is not None and self._worker.isRunning():
@@ -629,8 +725,6 @@ class ImportPage(QWidget):
                 pass
             self._worker.quit()
             if not self._worker.wait(3000):
-                # Thread still running after timeout — keep Python reference alive
-                # so Qt doesn't destroy the object while the thread is executing.
                 orphan = self._worker
                 self._orphaned_workers.append(orphan)
                 orphan.finished.connect(
@@ -640,10 +734,6 @@ class ImportPage(QWidget):
                 )
         self._worker = None
 
-    def _cleanup_orphan(self, worker: "ImportWorker"):
-        if worker in self._orphaned_workers:
-            self._orphaned_workers.remove(worker)
-
     def _reset(self):
         self._stop_worker()
         self.sheets = None
@@ -651,21 +741,23 @@ class ImportPage(QWidget):
         self.mapping = None
         self.source_path = None
         self._validation_result = None
+        self._import_settings = None
         self._remap_combos.clear()
         self.file_label.setText("ファイルが選択されていません")
-        self.file_label.setStyleSheet("color: #7f8c8d;")
+        self.file_label.setStyleSheet("color: #7f8c8d; font-size: 14px;")
         self.sheet_list.clear()
         self.sheet_group.setVisible(False)
         self.single_sheet_label.setVisible(False)
         self.step1_next.setEnabled(False)
         self.failures_table.setVisible(False)
+        self._error_file_banner.setVisible(False)
         self._go_to_step(0)
 
     def hideEvent(self, event):
         self._stop_worker()
         super().hideEvent(event)
 
-    # ─── Step 1 Logic ───
+    # ─── Step 1 logic ─────────────────────────────────────────────────────
 
     def _browse_file(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -678,7 +770,9 @@ class ImportPage(QWidget):
             return
         self.source_path = path
         self.file_label.setText(Path(path).name)
-        self.file_label.setStyleSheet("color: #2c3e50; font-weight: bold;")
+        self.file_label.setStyleSheet(
+            "color: #2c3e50; font-weight: bold; font-size: 14px;"
+        )
 
         try:
             self.sheets = read_file(Path(path))
@@ -686,9 +780,7 @@ class ImportPage(QWidget):
             QMessageBox.critical(self, "読込エラー", str(e))
             return
         except Exception as e:
-            QMessageBox.critical(
-                self, "読込エラー", f"ファイルの読み込みに失敗しました:\n{e}"
-            )
+            QMessageBox.critical(self, "読込エラー", f"ファイルの読み込みに失敗しました:\n{e}")
             return
 
         infos = get_sheet_info(self.sheets)
@@ -748,7 +840,7 @@ class ImportPage(QWidget):
         self._setup_column_mapping()
         self._go_to_step(1)
 
-    # ─── Step 2 Logic ───
+    # ─── Step 2 logic ─────────────────────────────────────────────────────
 
     def _setup_column_mapping(self):
         columns = list(self.current_df.columns)
@@ -789,8 +881,7 @@ class ImportPage(QWidget):
         date_col = self.date_combo.currentData()
         buddhist_col = self.buddhist_combo.currentData()
 
-        mapped = []
-        labels = []
+        mapped, labels = [], []
         if name_col and name_col in preview_df.columns:
             mapped.append(name_col)
             labels.append(f"氏名 [{name_col}]")
@@ -809,7 +900,6 @@ class ImportPage(QWidget):
         self.mapping_preview_table.setColumnCount(len(mapped))
         self.mapping_preview_table.setHorizontalHeaderLabels(labels)
         self.mapping_preview_table.setRowCount(len(preview_df))
-
         for i, (_, row) in enumerate(preview_df.iterrows()):
             for j, col in enumerate(mapped):
                 val = str(row.get(col, ""))
@@ -836,13 +926,8 @@ class ImportPage(QWidget):
         if buddhist_sel:
             base.buddhist_name_col = buddhist_sel
         used = {
-            base.name_col,
-            base.death_date_col,
-            base.buddhist_name_col,
-            base.era_col,
-            base.year_col,
-            base.month_col,
-            base.day_col,
+            base.name_col, base.death_date_col, base.buddhist_name_col,
+            base.era_col, base.year_col, base.month_col, base.day_col,
         }
         used.discard(None)
         base.extra_cols = [c for c in columns if c not in used]
@@ -856,9 +941,7 @@ class ImportPage(QWidget):
             QMessageBox.warning(self, "マッピングエラー", "氏名列を選択してください。")
             return
         if not mapping.death_date_col and not mapping.uses_split_date:
-            QMessageBox.warning(
-                self, "マッピングエラー", "没年月日列を選択してください。"
-            )
+            QMessageBox.warning(self, "マッピングエラー", "没年月日列を選択してください。")
             return
         self.mapping = mapping
 
@@ -881,11 +964,9 @@ class ImportPage(QWidget):
             self._populate_preview()
             self._go_to_step(3)
 
-    # ─── Step 3 Logic ───
+    # ─── Step 3 logic ─────────────────────────────────────────────────────
 
-    def _setup_column_remap(
-        self, remappable_cols: list[str], existing_db_cols: list[str]
-    ):
+    def _setup_column_remap(self, remappable_cols: list[str], existing_db_cols: list[str]):
         self.remap_info.setText(
             f"データベースには既存の属性列が {len(existing_db_cols)} 件あります。\n"
             "インポートファイルの各列を、既存の列に統合するか、新規列として追加するか選んでください。"
@@ -933,9 +1014,6 @@ class ImportPage(QWidget):
                 self.remap_preview_group.setVisible(False)
 
     def _step3_next(self):
-        # Each column ends up writing to (remap_target or col_itself); detect
-        # any two sources that converge on the same target — including the
-        # case where one source kept its name as-is.
         final_targets: dict[str, list[str]] = {}
         for excel_col, combo in self._remap_combos.items():
             target = combo.currentData() or excel_col
@@ -975,23 +1053,20 @@ class ImportPage(QWidget):
         self._populate_preview()
         self._go_to_step(3)
 
-    # ─── Step 4 Logic ───
+    # ─── Step 4 logic ─────────────────────────────────────────────────────
 
     def _populate_preview(self):
         df = self.current_df
         max_preview = 50
         preview_df = df.head(max_preview)
-
         cols = list(preview_df.columns)
         self.preview_table.setColumnCount(len(cols))
         self.preview_table.setHorizontalHeaderLabels(cols)
         self.preview_table.setRowCount(len(preview_df))
-
         for i, (_, row) in enumerate(preview_df.iterrows()):
             for j, col in enumerate(cols):
                 val = str(row.get(col, ""))
                 self.preview_table.setItem(i, j, QTableWidgetItem(val))
-
         total = len(df)
         if total > max_preview:
             self.preview_info.setText(
@@ -1001,8 +1076,6 @@ class ImportPage(QWidget):
             self.preview_info.setText(f"全{total}行を表示中")
 
     def _step4_back(self):
-        # Step 3 may have been skipped if remap was not needed; go back to
-        # whichever step actually owns the data prior to preview.
         try:
             db_cols = self.db.get_all_column_names()
         except DatabaseError:
@@ -1014,19 +1087,17 @@ class ImportPage(QWidget):
         self._go_to_step(2 if has_remap_step else 1)
 
     def _step4_next(self):
-        reply = QMessageBox.question(
-            self,
-            "検証の実行",
-            f"全{len(self.current_df)}行のデータを検証します。\n"
-            "日付の解析、必須項目の確認、重複チェックを行います。\n\n"
-            "実行しますか？",
-        )
-        if reply != QMessageBox.Yes:
+        """Show the single settings dialog, then start validation."""
+        if self.current_df is None:
             return
+        dlg = ImportSettingsDialog(len(self.current_df), parent=self)
+        if not dlg.exec():
+            return
+        self._import_settings = dlg
         self._go_to_step(4)
         self._run_validation()
 
-    # ─── Step 5 Logic ───
+    # ─── Step 5 logic ─────────────────────────────────────────────────────
 
     def _run_validation(self):
         self.validation_progress.setMaximum(max(1, len(self.current_df)))
@@ -1036,6 +1107,7 @@ class ImportPage(QWidget):
         self.export_errors_btn.setEnabled(False)
         self.revalidate_btn.setEnabled(False)
         self.delete_errors_btn.setEnabled(False)
+        self._error_file_banner.setVisible(False)
 
         self._worker = ImportWorker(
             self.db, self.current_df, self.mapping, self.source_path
@@ -1051,14 +1123,73 @@ class ImportPage(QWidget):
         self._worker = None
         self._validation_result = result
         self.validation_progress.setValue(self.validation_progress.maximum())
-        self._render_validation_summary()
-        self._render_error_table()
+
+        settings = self._import_settings
+
+        # Apply bulk duplicate action chosen in the settings dialog
+        if settings:
+            for row in result.duplicate_rows:
+                if row.duplicate_action is None:
+                    row.duplicate_action = settings.duplicate_mode
+
+        # Auto-create annotated error Excel (Feature 3)
+        if result.error_rows and self.source_path:
+            try:
+                err_path = export_annotated_copy(
+                    self.current_df,
+                    result.error_rows,
+                    Path(self.source_path),
+                )
+                self._error_file_banner.setText(
+                    f"エラー確認ファイルを保存しました:\n{err_path}"
+                )
+                self._error_file_banner.setVisible(True)
+            except Exception:
+                pass  # Don't abort if file creation fails
+
+        error_mode = settings.error_mode if settings else "manual"
+
+        if error_mode == "skip":
+            # Silently discard all error rows and jump to confirmation
+            skipped_count = len(result.error_rows)
+            result.error_rows.clear()
+            valid_count = len(result.valid_rows) + len(result.duplicate_rows)
+            if valid_count == 0:
+                self.validation_status.setText(
+                    f"有効なデータが見つかりませんでした（全 {skipped_count} 行にエラー）。\n"
+                    "ファイルの内容を確認してください。"
+                )
+                self.validation_status.setStyleSheet(
+                    "color: #e74c3c; font-size: 14px; padding: 8px;"
+                )
+                self.step5_next.setEnabled(False)
+            else:
+                if skipped_count:
+                    self.validation_status.setText(
+                        f"検証完了: 正常 {valid_count}件　エラー {skipped_count}件（スキップ）"
+                    )
+                    self.validation_status.setStyleSheet(
+                        "color: #e67e22; font-size: 14px; padding: 8px;"
+                    )
+                else:
+                    self.validation_status.setText(
+                        f"検証完了: 全 {valid_count}件 正常"
+                    )
+                    self.validation_status.setStyleSheet(
+                        "color: #27ae60; font-size: 14px; padding: 8px;"
+                    )
+                self._populate_confirm()
+                self._go_to_step(5)
+        else:
+            # Manual mode — show the error editor as before
+            self._render_validation_summary()
+            self._render_error_table()
 
     def _on_validation_error(self, error_msg: str):
         self._worker = None
         self.validation_status.setText(f"検証エラー: {error_msg}")
         self.validation_status.setStyleSheet(
-            "color: #e74c3c; font-size: 13px; padding: 8px;"
+            "color: #e74c3c; font-size: 14px; padding: 8px;"
         )
 
     def _render_validation_summary(self):
@@ -1073,13 +1204,11 @@ class ImportPage(QWidget):
             "検証完了:\n"
             f"  正常: {valid_count}件\n"
             f"  エラー: {error_count}件（修正または破棄してください）\n"
-            f"  重複: {dup_count}件（次の画面で処理方法を選択できます）"
+            f"  重複: {dup_count}件（次の画面で処理方法を確認できます）"
         )
         self.validation_status.setStyleSheet(
-            f"color: {color}; font-size: 13px; padding: 8px;"
+            f"color: {color}; font-size: 14px; padding: 8px;"
         )
-        # The "next" button is enabled even with errors — the user can choose
-        # to import only the rows that are valid and discard the rest.
         self.step5_next.setEnabled((valid_count + dup_count) > 0)
 
     def _render_error_table(self):
@@ -1095,8 +1224,6 @@ class ImportPage(QWidget):
             self.delete_errors_btn.setEnabled(False)
             return
 
-        # Header: original row number, every raw column from the source, and
-        # the human-readable error message at the end (read-only).
         all_cols = list(self.current_df.columns)
         headers = ["元の行"] + all_cols + ["エラー内容"]
         self.error_table.setColumnCount(len(headers))
@@ -1121,8 +1248,6 @@ class ImportPage(QWidget):
         self.delete_errors_btn.setEnabled(True)
 
     def _revalidate_errors(self):
-        """Run the pipeline on each (possibly edited) error row again and
-        promote any rows that now validate."""
         result = self._validation_result
         if result is None or not result.error_rows:
             return
@@ -1143,7 +1268,6 @@ class ImportPage(QWidget):
             if isinstance(outcome, ErrorRow):
                 new_errors.append(outcome)
             else:
-                # ValidatedRow — route to dup or valid bucket
                 if outcome.duplicate_of is not None:
                     result.duplicate_rows.append(outcome)
                     promoted_dup += 1
@@ -1166,7 +1290,9 @@ class ImportPage(QWidget):
         result = self._validation_result
         if result is None or not result.error_rows:
             return
-        rows = sorted({idx.row() for idx in self.error_table.selectedIndexes()}, reverse=True)
+        rows = sorted(
+            {idx.row() for idx in self.error_table.selectedIndexes()}, reverse=True
+        )
         if not rows:
             QMessageBox.information(self, "情報", "削除する行を選択してください。")
             return
@@ -1201,7 +1327,7 @@ class ImportPage(QWidget):
         self._populate_confirm()
         self._go_to_step(5)
 
-    # ─── Step 6 Logic ───
+    # ─── Step 6 logic ─────────────────────────────────────────────────────
 
     def _open_duplicate_dialog(self):
         if not self._validation_result or not self._validation_result.duplicate_rows:
@@ -1218,11 +1344,16 @@ class ImportPage(QWidget):
         if not result:
             return
 
-        # Default duplicate action to "overwrite" so the summary is accurate
-        # even if the user hasn't opened the resolution dialog yet.
         for row in result.duplicate_rows:
             if row.duplicate_action is None:
                 row.duplicate_action = "overwrite"
+
+        settings = self._import_settings
+        dup_mode_label = {
+            "overwrite": "上書き",
+            "insert": "新規追加",
+            "skip": "スキップ",
+        }.get(settings.duplicate_mode if settings else "overwrite", "上書き")
 
         sheet_name = self._get_current_sheet_name()
         remap_text = ""
@@ -1230,35 +1361,23 @@ class ImportPage(QWidget):
             lines = [f"  {src} → {dst}" for src, dst in self.mapping.column_remap.items()]
             remap_text = "\n列名変換:\n" + "\n".join(lines) + "\n"
 
-        # Compose count breakdown for the dup rows
-        to_overwrite = sum(
-            1 for r in result.duplicate_rows if r.duplicate_action == "overwrite"
-        )
-        to_insert_again = sum(
-            1 for r in result.duplicate_rows if r.duplicate_action == "insert"
-        )
-        to_skip = sum(
-            1 for r in result.duplicate_rows if r.duplicate_action == "skip"
-        )
+        to_overwrite = sum(1 for r in result.duplicate_rows if r.duplicate_action == "overwrite")
+        to_insert_again = sum(1 for r in result.duplicate_rows if r.duplicate_action == "insert")
+        to_skip = sum(1 for r in result.duplicate_rows if r.duplicate_action == "skip")
 
         dup_summary = ""
         if result.duplicate_rows:
             dup_summary = (
-                f"\n重複データの処理:\n"
-                f"  上書き: {to_overwrite}件\n"
-                f"  新規追加: {to_insert_again}件\n"
-                f"  スキップ: {to_skip}件\n"
+                f"\n重複データの処理（設定: {dup_mode_label}）:\n"
+                f"  上書き: {to_overwrite}件　新規追加: {to_insert_again}件　スキップ: {to_skip}件\n"
             )
             self.dup_btn.setVisible(True)
-            self.dup_btn.setText(
-                f"重複データの処理を確認（{len(result.duplicate_rows)}件）"
-            )
+            self.dup_btn.setText(f"重複データの処理を個別変更...（{len(result.duplicate_rows)}件）")
         else:
             self.dup_btn.setVisible(False)
 
         self.confirm_summary.setText(
-            f"インポート対象: 正常 {len(result.valid_rows)}件 / "
-            f"重複 {len(result.duplicate_rows)}件\n"
+            f"インポート対象: 正常 {len(result.valid_rows)}件 / 重複 {len(result.duplicate_rows)}件\n"
             f"ファイル: {Path(self.source_path).name}\n"
             f"シート: {sheet_name}\n"
             f"{remap_text}{dup_summary}\n"
@@ -1269,9 +1388,7 @@ class ImportPage(QWidget):
             r for r in result.duplicate_rows if r.duplicate_action != "skip"
         ]
         self.valid_table.setColumnCount(4)
-        self.valid_table.setHorizontalHeaderLabels(
-            ["氏名", "没年月日", "属性数", "処理"]
-        )
+        self.valid_table.setHorizontalHeaderLabels(["氏名", "没年月日", "属性数", "処理"])
         self.valid_table.setRowCount(min(len(rows_to_show), 200))
         for i, row in enumerate(rows_to_show[:200]):
             self.valid_table.setItem(i, 0, QTableWidgetItem(row.name))
@@ -1295,25 +1412,13 @@ class ImportPage(QWidget):
         all_rows = result.valid_rows + result.duplicate_rows
         write_count = sum(1 for r in all_rows if r.duplicate_action != "skip")
 
-        reply = QMessageBox.question(
-            self,
-            "最終確認",
-            f"{write_count}件のデータをデータベースに書き込みます。\n\n実行しますか？",
-        )
-        if reply != QMessageBox.Yes:
-            return
-
         try:
             outcome = import_validated_rows(self.db, all_rows)
         except DatabaseError as e:
             self.result_icon.setText("NG")
-            self.result_icon.setStyleSheet(
-                "font-size: 48px; padding: 16px; color: #e74c3c;"
-            )
+            self.result_icon.setStyleSheet("font-size: 56px; padding: 20px; color: #e74c3c;")
             self.result_label.setText(f"インポートに失敗しました\n\n{e}")
-            self.result_label.setStyleSheet(
-                "color: #e74c3c; font-size: 16px; padding: 16px;"
-            )
+            self.result_label.setStyleSheet("color: #e74c3c; font-size: 16px; padding: 16px;")
             self.failures_table.setVisible(False)
             self._go_to_step(6)
             return
@@ -1325,14 +1430,10 @@ class ImportPage(QWidget):
 
         if failures:
             self.result_icon.setText("⚠")
-            self.result_icon.setStyleSheet(
-                "font-size: 48px; padding: 16px; color: #e67e22;"
-            )
+            self.result_icon.setStyleSheet("font-size: 56px; padding: 20px; color: #e67e22;")
         else:
             self.result_icon.setText("OK")
-            self.result_icon.setStyleSheet(
-                "font-size: 48px; padding: 16px; color: #27ae60;"
-            )
+            self.result_icon.setStyleSheet("font-size: 56px; padding: 20px; color: #27ae60;")
 
         msg_lines = [
             "インポート結果:",
@@ -1343,9 +1444,7 @@ class ImportPage(QWidget):
         if failures:
             msg_lines.append(f"  失敗: {len(failures)}件（下記参照）")
         self.result_label.setText("\n".join(msg_lines))
-        self.result_label.setStyleSheet(
-            "color: #2c3e50; font-size: 16px; padding: 16px;"
-        )
+        self.result_label.setStyleSheet("color: #2c3e50; font-size: 16px; padding: 16px;")
 
         if failures:
             self.failures_table.setRowCount(len(failures))
@@ -1358,7 +1457,7 @@ class ImportPage(QWidget):
 
         self._go_to_step(6)
 
-    # ─── Helpers ───
+    # ─── Helpers ──────────────────────────────────────────────────────────
 
     def _get_current_sheet_name(self) -> str:
         if self.sheet_list.currentItem():

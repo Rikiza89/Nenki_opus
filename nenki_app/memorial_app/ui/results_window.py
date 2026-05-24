@@ -276,6 +276,20 @@ class ResultsPage(QWidget):
         header.setStyleSheet("font-size: 24px; font-weight: bold; color: #2c3e50;")
         layout.addWidget(header)
 
+        # Empty-state banner — shown when no calculation has been performed yet
+        self._empty_banner = QLabel(
+            "データがまだ準備されていません。\n"
+            "左メニューの「年忌計算」で計算を実行すると、ここに結果が表示されます。"
+        )
+        self._empty_banner.setAlignment(Qt.AlignCenter)
+        self._empty_banner.setWordWrap(True)
+        self._empty_banner.setStyleSheet(
+            "font-size: 16px; color: #7f8c8d; padding: 40px 20px; "
+            "background: #f8f9fa; border: 2px dashed #bdc3c7; border-radius: 8px;"
+        )
+        self._empty_banner.setVisible(True)
+        layout.addWidget(self._empty_banner)
+
         # Nenki type filter
         nenki_group = QGroupBox(
             "表示する年忌の種類（チェックを外すと出力から除外されます）"
@@ -362,6 +376,8 @@ class ResultsPage(QWidget):
     def set_anniversary_data(self, results, target_year):
         self._results = results
         self._target_year = target_year
+        has_data = bool(results)
+        self._empty_banner.setVisible(not has_data)
         self._filter_results()
 
     def _filter_results(self):

@@ -62,6 +62,7 @@ class ErrorRow:
     row_index: int
     raw_data: dict[str, str]
     error_message: str  # Japanese error message
+    error_column: str | None = None  # Which column caused the error (for Excel highlighting)
 
 
 @dataclass
@@ -101,18 +102,31 @@ class ValidationPipeline:
             # Stage 1: Pre-validation - check required fields
             name = self._extract_name(row)
             if not name:
-                result.error_rows.append(ErrorRow(row_index, raw, "氏名が空です"))
+                result.error_rows.append(
+                    ErrorRow(row_index, raw, "氏名が空です", error_column=self.mapping.name_col)
+                )
                 continue
 
             # Stage 2: Date parsing
+            _date_col = (
+                self.mapping.death_date_col
+                if not self.mapping.uses_split_date
+                else self.mapping.year_col
+            )
             try:
                 parsed = self._parse_death_date(row)
             except DateValidationError as e:
-                result.error_rows.append(ErrorRow(row_index, raw, str(e)))
+                result.error_rows.append(
+                    ErrorRow(row_index, raw, str(e), error_column=_date_col)
+                )
                 continue
             except Exception as e:
                 result.error_rows.append(
-                    ErrorRow(row_index, raw, f"日付の解析中に予期しないエラー: {e}")
+                    ErrorRow(
+                        row_index, raw,
+                        f"日付の解析中に予期しないエラー: {e}",
+                        error_column=_date_col,
+                    )
                 )
                 continue
 
@@ -124,6 +138,7 @@ class ValidationPipeline:
                         row_index,
                         raw,
                         f"没年月日が未来の日付です: {parsed.era_display}",
+                        error_column=_date_col,
                     )
                 )
                 continue
@@ -133,6 +148,7 @@ class ValidationPipeline:
                         row_index,
                         raw,
                         f"没年月日が明治以前です: {parsed.era_display}",
+                        error_column=_date_col,
                     )
                 )
                 continue
@@ -156,6 +172,7 @@ class ValidationPipeline:
                         row_index,
                         raw,
                         f"ファイル内で重複しています（同一データの最初の出現: {seen_in_file[key] + 2}行目）",
+                        error_column=self.mapping.name_col,
                     )
                 )
                 continue
@@ -313,6 +330,75 @@ def export_error_rows(error_rows: list[ErrorRow], output_path: Path) -> None:
         data.append(row_data)
     df = pd.DataFrame(data)
     df.to_excel(output_path, index=False, engine="openpyxl")
+
+
+def export_annotated_copy(
+    original_df: "pd.DataFrame",
+    error_rows: "list[ErrorRow]",
+    source_path: "Path",
+) -> "Path":
+    """Create *{stem}_エラー確認.xlsx* next to the original file.
+
+    All original rows are preserved.  Error rows are highlighted:
+    - The specific problem column gets an orange background.
+    - The whole error row gets a light-yellow tint.
+    - An appended 「エラー内容」column shows the Japanese error message in red.
+    Returns the path of the created file.
+    """
+    import openpyxl
+    from openpyxl.styles import PatternFill, Font
+
+    output_path = source_path.parent / f"{source_path.stem}_エラー確認.xlsx"
+
+    err_map: dict[int, tuple[str | None, str]] = {
+        er.row_index: (er.error_column, er.error_message) for er in error_rows
+    }
+
+    df_copy = original_df.copy()
+    df_copy["エラー内容"] = [
+        err_map[i][1] if i in err_map else "" for i in range(len(df_copy))
+    ]
+    df_copy.to_excel(output_path, index=False, engine="openpyxl")
+
+    wb = openpyxl.load_workbook(output_path)
+    ws = wb.active
+
+    orange_fill = PatternFill(start_color="FFB347", end_color="FFB347", fill_type="solid")
+    yellow_fill = PatternFill(start_color="FFF9C4", end_color="FFF9C4", fill_type="solid")
+    red_font = Font(color="C0392B", bold=True)
+
+    col_idx: dict[str, int] = {
+        ws.cell(1, j).value: j
+        for j in range(1, ws.max_column + 1)
+        if ws.cell(1, j).value
+    }
+    err_col_idx = col_idx.get("エラー内容")
+
+    for er in error_rows:
+        xlsx_row = er.row_index + 2  # 1-based + header row
+        if xlsx_row > ws.max_row:
+            continue
+        # Tint entire data row light-yellow
+        for j in range(1, ws.max_column + 1):
+            ws.cell(xlsx_row, j).fill = yellow_fill
+        # Stronger orange on the specific problem column
+        if er.error_column and er.error_column in col_idx:
+            ws.cell(xlsx_row, col_idx[er.error_column]).fill = orange_fill
+        # Red bold text in the error-message column
+        if err_col_idx:
+            ws.cell(xlsx_row, err_col_idx).font = red_font
+
+    # Approximate column widths
+    for col in ws.columns:
+        letter = col[0].column_letter
+        max_len = max(
+            (len(str(cell.value)) for cell in col if cell.value is not None),
+            default=8,
+        )
+        ws.column_dimensions[letter].width = min(max_len + 4, 45)
+
+    wb.save(output_path)
+    return output_path
 
 
 def import_validated_rows(db: DatabaseManager, rows: list[ValidatedRow]):

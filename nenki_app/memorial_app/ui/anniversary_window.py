@@ -252,7 +252,14 @@ class AnniversaryPage(QWidget):
             self.table.setItem(i, 4, QTableWidgetItem(buddhist_name))
 
         self.status_label.setText(f"{len(results)}件の年忌が見つかりました")
-        self.export_btn.setEnabled(len(results) > 0)
+        has_results = len(results) > 0
+        self.export_btn.setEnabled(has_results)
+
+        # Unlock the 結果一覧 sidebar button once we have real results
+        if has_results:
+            main_win = self.window()
+            if hasattr(main_win, "unlock_results_page"):
+                main_win.unlock_results_page()
 
     def _go_to_document_gen(self):
         main_window = self.window()
