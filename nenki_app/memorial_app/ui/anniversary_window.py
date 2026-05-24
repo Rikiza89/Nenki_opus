@@ -253,6 +253,10 @@ class AnniversaryPage(QWidget):
 
         self.status_label.setText(f"{len(results)}件の年忌が見つかりました")
         self.export_btn.setEnabled(len(results) > 0)
+        if results:
+            main_window = self.window()
+            if hasattr(main_window, "unlock_results_tab"):
+                main_window.unlock_results_tab()
 
     def _go_to_document_gen(self):
         main_window = self.window()

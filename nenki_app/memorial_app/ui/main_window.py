@@ -67,6 +67,7 @@ class MainWindow(QMainWindow):
             }
             QPushButton:hover { background-color: #34495e; }
             QPushButton:checked { background-color: #3498db; font-weight: bold; }
+            QPushButton:disabled { color: #546e7a; font-style: italic; }
         """)
 
         layout = QVBoxLayout(sidebar)
@@ -105,12 +106,18 @@ class MainWindow(QMainWindow):
             layout.addWidget(btn)
             self.nav_buttons[name] = btn
 
+        # Results tab is locked until anniversary calculation produces data
+        self.nav_buttons["結果一覧"].setEnabled(False)
+
         layout.addStretch()
         return sidebar
 
     def _add_page(self, name: str, widget: QWidget):
         self.pages[name] = widget
         self.stack.addWidget(widget)
+
+    def unlock_results_tab(self):
+        self.nav_buttons["結果一覧"].setEnabled(True)
 
     def _select_page(self, name: str):
         if name in self.pages:

@@ -46,7 +46,7 @@ from memorial_app.importer.validation_pipeline import (
     ValidatedRow,
     ErrorRow,
     import_validated_rows,
-    export_error_rows,
+    create_error_annotated_copy,
 )
 
 
@@ -470,8 +470,17 @@ class ImportPage(QWidget):
         )
         layout.addWidget(self.error_table)
 
+        self.error_file_label = QLabel("")
+        self.error_file_label.setWordWrap(True)
+        self.error_file_label.setStyleSheet(
+            "color: #27ae60; font-size: 12px; padding: 6px 8px; "
+            "background: #eafaf1; border: 1px solid #a9dfbf; border-radius: 4px;"
+        )
+        self.error_file_label.setVisible(False)
+        layout.addWidget(self.error_file_label)
+
         error_actions = QHBoxLayout()
-        self.revalidate_btn = QPushButton("修正後に再検証")
+        self.revalidate_btn = QPushButton("再検証（編集後に押してください）")
         self.revalidate_btn.setStyleSheet(
             "background: #16a085; color: white; padding: 6px 14px;"
         )
@@ -479,17 +488,17 @@ class ImportPage(QWidget):
         self.revalidate_btn.setEnabled(False)
         error_actions.addWidget(self.revalidate_btn)
 
-        self.export_errors_btn = QPushButton("エラー行をExcelに出力")
-        self.export_errors_btn.setStyleSheet("padding: 6px 14px;")
-        self.export_errors_btn.setEnabled(False)
-        self.export_errors_btn.clicked.connect(self._export_errors)
-        error_actions.addWidget(self.export_errors_btn)
-
         self.delete_errors_btn = QPushButton("選択行を破棄")
         self.delete_errors_btn.setStyleSheet("padding: 6px 14px;")
         self.delete_errors_btn.setEnabled(False)
         self.delete_errors_btn.clicked.connect(self._delete_selected_errors)
         error_actions.addWidget(self.delete_errors_btn)
+
+        self.step5_action_status = QLabel("")
+        self.step5_action_status.setStyleSheet(
+            "color: #e67e22; font-size: 12px; padding: 4px;"
+        )
+        error_actions.addWidget(self.step5_action_status)
 
         error_actions.addStretch()
         layout.addLayout(error_actions)
@@ -659,6 +668,8 @@ class ImportPage(QWidget):
         self.single_sheet_label.setVisible(False)
         self.step1_next.setEnabled(False)
         self.failures_table.setVisible(False)
+        self.error_file_label.setVisible(False)
+        self.step5_action_status.setText("")
         self._go_to_step(0)
 
     def hideEvent(self, event):
@@ -959,19 +970,6 @@ class ImportPage(QWidget):
             if (combo.currentData() or excel_col) != excel_col
         }
         self.mapping.column_remap = remap
-
-        if remap:
-            lines = [f"  {src} → {dst}" for src, dst in remap.items()]
-            reply = QMessageBox.question(
-                self,
-                "列の統合確認",
-                "以下の列名変換を適用してインポートします:\n\n"
-                + "\n".join(lines)
-                + "\n\nよろしいですか？",
-            )
-            if reply != QMessageBox.Yes:
-                return
-
         self._populate_preview()
         self._go_to_step(3)
 
@@ -1014,15 +1012,6 @@ class ImportPage(QWidget):
         self._go_to_step(2 if has_remap_step else 1)
 
     def _step4_next(self):
-        reply = QMessageBox.question(
-            self,
-            "検証の実行",
-            f"全{len(self.current_df)}行のデータを検証します。\n"
-            "日付の解析、必須項目の確認、重複チェックを行います。\n\n"
-            "実行しますか？",
-        )
-        if reply != QMessageBox.Yes:
-            return
         self._go_to_step(4)
         self._run_validation()
 
@@ -1033,7 +1022,6 @@ class ImportPage(QWidget):
         self.validation_progress.setValue(0)
         self.validation_status.setText("検証中...")
         self.step5_next.setEnabled(False)
-        self.export_errors_btn.setEnabled(False)
         self.revalidate_btn.setEnabled(False)
         self.delete_errors_btn.setEnabled(False)
 
@@ -1053,6 +1041,21 @@ class ImportPage(QWidget):
         self.validation_progress.setValue(self.validation_progress.maximum())
         self._render_validation_summary()
         self._render_error_table()
+        self._auto_create_error_file(result)
+
+    def _auto_create_error_file(self, result: ValidationResult):
+        if not result.error_rows or not self.source_path:
+            self.error_file_label.setVisible(False)
+            return
+        sheet = self._get_current_sheet_name() or None
+        out = create_error_annotated_copy(result.error_rows, Path(self.source_path), sheet)
+        if out:
+            self.error_file_label.setText(
+                f"エラーファイルを自動作成しました:\n{out}"
+            )
+            self.error_file_label.setVisible(True)
+        else:
+            self.error_file_label.setVisible(False)
 
     def _on_validation_error(self, error_msg: str):
         self._worker = None
@@ -1091,8 +1094,8 @@ class ImportPage(QWidget):
             self.error_table.setRowCount(0)
             self.error_table.setColumnCount(0)
             self.revalidate_btn.setEnabled(False)
-            self.export_errors_btn.setEnabled(False)
             self.delete_errors_btn.setEnabled(False)
+            self.step5_action_status.setText("")
             return
 
         # Header: original row number, every raw column from the source, and
@@ -1117,7 +1120,6 @@ class ImportPage(QWidget):
         self.error_table.resizeColumnsToContents()
 
         self.revalidate_btn.setEnabled(True)
-        self.export_errors_btn.setEnabled(True)
         self.delete_errors_btn.setEnabled(True)
 
     def _revalidate_errors(self):
@@ -1154,12 +1156,15 @@ class ImportPage(QWidget):
         result.error_rows = new_errors
         self._render_validation_summary()
         self._render_error_table()
-        QMessageBox.information(
-            self,
-            "再検証完了",
-            f"正常に修正: {promoted_valid}件\n"
-            f"重複として検出: {promoted_dup}件\n"
-            f"未解決のエラー: {len(new_errors)}件",
+        parts = []
+        if promoted_valid:
+            parts.append(f"正常に修正: {promoted_valid}件")
+        if promoted_dup:
+            parts.append(f"重複として検出: {promoted_dup}件")
+        if new_errors:
+            parts.append(f"未解決のエラー: {len(new_errors)}件")
+        self.step5_action_status.setText(
+            "再検証完了: " + " / ".join(parts) if parts else "再検証完了"
         )
 
     def _delete_selected_errors(self):
@@ -1168,34 +1173,21 @@ class ImportPage(QWidget):
             return
         rows = sorted({idx.row() for idx in self.error_table.selectedIndexes()}, reverse=True)
         if not rows:
-            QMessageBox.information(self, "情報", "削除する行を選択してください。")
+            self.step5_action_status.setText("削除する行を選択してから押してください。")
             return
         reply = QMessageBox.question(
             self,
             "破棄確認",
-            f"選択された{len(rows)}件のエラー行をインポートから除外します。\n続行しますか？",
+            f"選択された {len(rows)} 件のエラー行をインポートから除外します。\n続行しますか？",
         )
         if reply != QMessageBox.Yes:
             return
         for r in rows:
             if 0 <= r < len(result.error_rows):
                 result.error_rows.pop(r)
+        self.step5_action_status.setText("")
         self._render_validation_summary()
         self._render_error_table()
-
-    def _export_errors(self):
-        if not self._validation_result or not self._validation_result.error_rows:
-            return
-        path, _ = QFileDialog.getSaveFileName(
-            self, "エラー行を保存", "errors.xlsx", "Excel (*.xlsx)"
-        )
-        if not path:
-            return
-        try:
-            export_error_rows(self._validation_result.error_rows, Path(path))
-            QMessageBox.information(self, "完了", f"エラー行を保存しました:\n{path}")
-        except Exception as e:
-            QMessageBox.critical(self, "エラー", f"エクスポートに失敗しました:\n{e}")
 
     def _step5_next(self):
         self._populate_confirm()
@@ -1293,15 +1285,6 @@ class ImportPage(QWidget):
             return
 
         all_rows = result.valid_rows + result.duplicate_rows
-        write_count = sum(1 for r in all_rows if r.duplicate_action != "skip")
-
-        reply = QMessageBox.question(
-            self,
-            "最終確認",
-            f"{write_count}件のデータをデータベースに書き込みます。\n\n実行しますか？",
-        )
-        if reply != QMessageBox.Yes:
-            return
 
         try:
             outcome = import_validated_rows(self.db, all_rows)

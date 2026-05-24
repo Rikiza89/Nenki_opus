@@ -307,6 +307,29 @@ class ResultsPage(QWidget):
 
         layout.addWidget(nenki_group)
 
+        self.no_data_banner = QLabel(
+            "まず「年忌計算」タブで計算を実行してください。\n\n"
+            "計算が完了すると、ここに結果が表示され、出力ボタンが使えるようになります。"
+        )
+        self.no_data_banner.setAlignment(Qt.AlignCenter)
+        self.no_data_banner.setWordWrap(True)
+        self.no_data_banner.setStyleSheet(
+            "color: #7f8c8d; font-size: 15px; padding: 40px 24px; "
+            "background: #f8f9fa; border: 2px dashed #bdc3c7; border-radius: 8px;"
+        )
+        layout.addWidget(self.no_data_banner)
+
+        self.filter_warning = QLabel(
+            "出力する年忌の種類を1つ以上選択してください。"
+        )
+        self.filter_warning.setAlignment(Qt.AlignCenter)
+        self.filter_warning.setStyleSheet(
+            "color: #e67e22; font-size: 13px; padding: 8px; "
+            "background: #fef9e7; border: 1px solid #f9e79f; border-radius: 4px;"
+        )
+        self.filter_warning.setVisible(False)
+        layout.addWidget(self.filter_warning)
+
         # Results table
         self.table = QTableWidget()
         self.table.setColumnCount(5)
@@ -325,28 +348,33 @@ class ResultsPage(QWidget):
         self.status_label.setStyleSheet("color: #7f8c8d;")
         btn_layout.addWidget(self.status_label, 1)
 
-        visual_btn = QPushButton("ビジュアル編集・出力")
-        visual_btn.setStyleSheet(
+        self.visual_btn = QPushButton("ビジュアル編集・出力")
+        self.visual_btn.setStyleSheet(
             "background: #27ae60; color: white; padding: 8px 20px; font-weight: bold;"
         )
-        visual_btn.clicked.connect(self._open_visual_editor)
-        btn_layout.addWidget(visual_btn)
+        self.visual_btn.clicked.connect(self._open_visual_editor)
+        self.visual_btn.setEnabled(False)
+        btn_layout.addWidget(self.visual_btn)
 
-        word_btn = QPushButton("Word出力（縦書き）")
-        word_btn.setStyleSheet(
+        self.word_btn = QPushButton("Word出力（縦書き）")
+        self.word_btn.setStyleSheet(
             "background: #2980b9; color: white; padding: 8px 20px; font-weight: bold;"
         )
-        word_btn.clicked.connect(self._export_word)
-        btn_layout.addWidget(word_btn)
+        self.word_btn.clicked.connect(self._export_word)
+        self.word_btn.setEnabled(False)
+        btn_layout.addWidget(self.word_btn)
 
-        pdf_btn = QPushButton("PDF出力")
-        pdf_btn.setStyleSheet(
+        self.pdf_btn = QPushButton("PDF出力")
+        self.pdf_btn.setStyleSheet(
             "background: #c0392b; color: white; padding: 8px 20px; font-weight: bold;"
         )
-        pdf_btn.clicked.connect(self._export_pdf)
-        btn_layout.addWidget(pdf_btn)
+        self.pdf_btn.clicked.connect(self._export_pdf)
+        self.pdf_btn.setEnabled(False)
+        btn_layout.addWidget(self.pdf_btn)
 
         layout.addLayout(btn_layout)
+
+        self._update_export_state()
 
     def refresh(self):
         pass
@@ -380,6 +408,20 @@ class ResultsPage(QWidget):
         self.status_label.setText(
             f"{len(filtered)}件表示中（全{len(self._results)}件）"
         )
+        self._update_export_state()
+
+    def _update_export_state(self):
+        has_data = bool(self._results)
+        selected = {name for name, cb in self.nenki_checks.items() if cb.isChecked()}
+        filtered_count = sum(1 for r in self._results if r[0].name in selected)
+
+        self.no_data_banner.setVisible(not has_data)
+        self.table.setVisible(has_data)
+        self.filter_warning.setVisible(has_data and filtered_count == 0)
+
+        can_export = has_data and filtered_count > 0
+        for btn in (self.visual_btn, self.word_btn, self.pdf_btn):
+            btn.setEnabled(can_export)
 
     def _collect_available_fields(self) -> list[str]:
         """Discover all available fields from data: built-in + all EAV attribute keys."""
@@ -431,25 +473,11 @@ class ResultsPage(QWidget):
 
     def _do_export(self, format_type: str):
         """Common export flow for Word and PDF."""
-        if not self._results:
-            QMessageBox.information(
-                self,
-                "情報",
-                "出力するデータがありません。\n年忌計算を先に実行してください。",
-            )
-            return
-
-        # Check nenki filter
         selected_nenki = {
             name for name, cb in self.nenki_checks.items() if cb.isChecked()
         }
         filtered = [r for r in self._results if r[0].name in selected_nenki]
         if not filtered:
-            QMessageBox.information(
-                self,
-                "情報",
-                "表示中のデータがありません。\n年忌の種類を選択してください。",
-            )
             return
 
         # Person selection dialog
@@ -507,22 +535,6 @@ class ResultsPage(QWidget):
         if not path:
             return
 
-        # Final confirmation
-        field_list = "、".join(selected_fields)
-        reply = QMessageBox.question(
-            self,
-            "生成確認",
-            f"以下の設定でドキュメントを生成します:\n\n"
-            f"形式: {format_type.upper()}\n"
-            f"ファイル: {Path(path).name}\n"
-            f"レイアウト: {'1列' if single_column else '2列'}\n"
-            f"出力項目: {field_list}\n"
-            f"対象: {sum(len(e) for _, e in sorted_data)}名\n\n"
-            f"生成しますか？",
-        )
-        if reply != QMessageBox.Yes:
-            return
-
         try:
             if format_type == "word":
                 from memorial_app.documents.word_generator import WordGenerator
@@ -577,19 +589,9 @@ class ResultsPage(QWidget):
 
     def _open_visual_editor(self):
         """Launch the visual editor window with the currently filtered results."""
-        if not self._results:
-            QMessageBox.information(
-                self, "情報",
-                "出力するデータがありません。\n年忌計算を先に実行してください。",
-            )
-            return
-
         selected_nenki = {name for name, cb in self.nenki_checks.items() if cb.isChecked()}
         filtered = [r for r in self._results if r[0].name in selected_nenki]
         if not filtered:
-            QMessageBox.information(
-                self, "情報", "表示中のデータがありません。\n年忌の種類を選択してください。"
-            )
             return
 
         available_fields = self._collect_available_fields()

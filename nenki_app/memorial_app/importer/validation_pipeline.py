@@ -62,6 +62,7 @@ class ErrorRow:
     row_index: int
     raw_data: dict[str, str]
     error_message: str  # Japanese error message
+    error_column: str | None = None  # column that caused the error (for highlighting)
 
 
 @dataclass
@@ -101,18 +102,25 @@ class ValidationPipeline:
             # Stage 1: Pre-validation - check required fields
             name = self._extract_name(row)
             if not name:
-                result.error_rows.append(ErrorRow(row_index, raw, "氏名が空です"))
+                result.error_rows.append(
+                    ErrorRow(row_index, raw, "氏名が空です", self.mapping.name_col)
+                )
                 continue
 
             # Stage 2: Date parsing
+            date_err_col = (
+                self.mapping.death_date_col
+                if not self.mapping.uses_split_date
+                else (self.mapping.year_col or self.mapping.era_col)
+            )
             try:
                 parsed = self._parse_death_date(row)
             except DateValidationError as e:
-                result.error_rows.append(ErrorRow(row_index, raw, str(e)))
+                result.error_rows.append(ErrorRow(row_index, raw, str(e), date_err_col))
                 continue
             except Exception as e:
                 result.error_rows.append(
-                    ErrorRow(row_index, raw, f"日付の解析中に予期しないエラー: {e}")
+                    ErrorRow(row_index, raw, f"日付の解析中に予期しないエラー: {e}", date_err_col)
                 )
                 continue
 
@@ -124,6 +132,7 @@ class ValidationPipeline:
                         row_index,
                         raw,
                         f"没年月日が未来の日付です: {parsed.era_display}",
+                        date_err_col,
                     )
                 )
                 continue
@@ -133,6 +142,7 @@ class ValidationPipeline:
                         row_index,
                         raw,
                         f"没年月日が明治以前です: {parsed.era_display}",
+                        date_err_col,
                     )
                 )
                 continue
@@ -199,22 +209,27 @@ class ValidationPipeline:
 
         name = self._extract_name(row)
         if not name:
-            return ErrorRow(row_index, raw, "氏名が空です")
+            return ErrorRow(row_index, raw, "氏名が空です", self.mapping.name_col)
 
+        date_err_col = (
+            self.mapping.death_date_col
+            if not self.mapping.uses_split_date
+            else (self.mapping.year_col or self.mapping.era_col)
+        )
         try:
             parsed = self._parse_death_date(row)
         except DateValidationError as e:
-            return ErrorRow(row_index, raw, str(e))
+            return ErrorRow(row_index, raw, str(e), date_err_col)
         except Exception as e:
-            return ErrorRow(row_index, raw, f"日付の解析中に予期しないエラー: {e}")
+            return ErrorRow(row_index, raw, f"日付の解析中に予期しないエラー: {e}", date_err_col)
 
         if parsed.date > datetime.date.today():
             return ErrorRow(
-                row_index, raw, f"没年月日が未来の日付です: {parsed.era_display}"
+                row_index, raw, f"没年月日が未来の日付です: {parsed.era_display}", date_err_col
             )
         if parsed.date.year < 1868:
             return ErrorRow(
-                row_index, raw, f"没年月日が明治以前です: {parsed.era_display}"
+                row_index, raw, f"没年月日が明治以前です: {parsed.era_display}", date_err_col
             )
 
         try:
@@ -294,6 +309,113 @@ class ValidationPipeline:
             if val:
                 _set(col, val)
         return attrs
+
+
+def _get_suggestion(error_message: str) -> str:
+    """Return a human-readable fix hint for an error message."""
+    msg = error_message
+    if "氏名が空" in msg:
+        return "氏名（必須）を入力してください。"
+    if "没年月日が空" in msg:
+        return "没年月日（必須）を入力してください。\n例: 令和元年5月1日 / 2019-05-01"
+    if "未来の日付" in msg:
+        return f"{msg}\n→ 過去の日付を入力してください。"
+    if "明治以前" in msg:
+        return f"{msg}\n→ 対象は明治元年（1868年）以降のみです。"
+    if "ファイル内で重複" in msg:
+        return f"{msg}\n→ 重複行を削除または修正してください。"
+    if "日付の解析" in msg or "予期しないエラー" in msg:
+        return "日付の形式を確認してください。\n正しい形式: 令和○年○月○日 / 平成○年○月○日 / YYYY-MM-DD"
+    # DateValidationError messages from the parser — append format hint
+    return f"{msg}\n→ 正しい形式: 令和○年○月○日 / 平成○年○月○日 / YYYY-MM-DD"
+
+
+def create_error_annotated_copy(
+    error_rows: list[ErrorRow],
+    original_path: Path,
+    sheet_name: str | None = None,
+) -> "Path | None":
+    """Create an annotated copy of the original file with error rows highlighted.
+
+    For xlsx/xlsm files the original sheet is copied and annotated in-place.
+    For other formats (xls, csv) a new xlsx is built from the raw row data.
+    Returns the path to the created file, or None on failure.
+    """
+    if not error_rows:
+        return None
+
+    try:
+        import openpyxl
+        from openpyxl.styles import PatternFill, Font as OxFont
+
+        suffix = original_path.suffix.lower()
+        out_path = original_path.parent / f"{original_path.stem}_エラー.xlsx"
+
+        pink_fill = PatternFill(start_color="FFD9D9", end_color="FFD9D9", fill_type="solid")
+        dark_fill = PatternFill(start_color="FF9999", end_color="FF9999", fill_type="solid")
+        header_font = OxFont(bold=True, color="CC0000")
+
+        if suffix in (".xlsx", ".xlsm"):
+            wb = openpyxl.load_workbook(original_path)
+            ws = (
+                wb[sheet_name]
+                if sheet_name and sheet_name in wb.sheetnames
+                else wb.active
+            )
+
+            # Map header cell values → column indices
+            header_map: dict[str, int] = {
+                str(cell.value): cell.column
+                for cell in ws[1]
+                if cell.value is not None
+            }
+
+            suggestion_col = ws.max_column + 1
+            hdr = ws.cell(row=1, column=suggestion_col, value="エラー内容・修正提案")
+            hdr.font = header_font
+
+            for err in error_rows:
+                excel_row = err.row_index + 2  # 0-based pandas + header row + 1-based
+                if excel_row > ws.max_row:
+                    continue
+                for cell in ws[excel_row]:
+                    cell.fill = pink_fill
+                if err.error_column and err.error_column in header_map:
+                    ws.cell(row=excel_row, column=header_map[err.error_column]).fill = dark_fill
+                ws.cell(
+                    row=excel_row,
+                    column=suggestion_col,
+                    value=_get_suggestion(err.error_message),
+                )
+        else:
+            # xls / csv: rebuild as a new xlsx with just the error rows
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "エラー行"
+
+            cols = list(error_rows[0].raw_data.keys())
+            suggestion_col = len(cols) + 1
+            for j, col in enumerate(cols, 1):
+                ws.cell(row=1, column=j, value=col)
+            hdr = ws.cell(row=1, column=suggestion_col, value="エラー内容・修正提案")
+            hdr.font = header_font
+
+            for i, err in enumerate(error_rows, 2):
+                for j, col in enumerate(cols, 1):
+                    cell = ws.cell(row=i, column=j, value=err.raw_data.get(col, ""))
+                    cell.fill = (
+                        dark_fill if col == err.error_column else pink_fill
+                    )
+                ws.cell(
+                    row=i,
+                    column=suggestion_col,
+                    value=_get_suggestion(err.error_message),
+                )
+
+        wb.save(out_path)
+        return out_path
+    except Exception:
+        return None
 
 
 def export_error_rows(error_rows: list[ErrorRow], output_path: Path) -> None:
