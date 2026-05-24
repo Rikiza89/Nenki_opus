@@ -268,6 +268,7 @@ class ResultsPage(QWidget):
         self.db = db_manager
         self._results = []  # [(ann, person_name, attrs_dict, person_id), ...]
         self._target_year = datetime.date.today().year + 1
+        self._open_editors = []  # keeps Python refs alive so GC doesn't collect them
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -616,6 +617,11 @@ class ResultsPage(QWidget):
         from memorial_app.ui.visual_editor.visual_editor_window import VisualEditorWindow
         editor = VisualEditorWindow(
             filtered, self._target_year, field_names, single_column, self.db, parent=self
+        )
+        self._open_editors.append(editor)
+        editor.destroyed.connect(
+            lambda obj=editor: self._open_editors.remove(obj)
+            if obj in self._open_editors else None
         )
         editor.show()
 

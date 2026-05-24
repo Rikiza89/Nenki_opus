@@ -231,16 +231,32 @@ class VisualEditorWindow(QMainWindow):
             self._webview = QWebEngineView()
             splitter.addWidget(self._webview)
         else:
-            self._fallback_label = QLabel("(QWebEngineView not available)")
+            notice = QLabel(
+                "⚠ プレビューを表示するには PySide6-WebEngine が必要です。\n\n"
+                "setup_packages.bat を再実行するとインストールされます。\n"
+                "Word/PDF出力ボタンは引き続きご利用いただけます。\n\n"
+                "─────────────────────────────\n"
+            )
+            notice.setStyleSheet(
+                "color:#c0392b;font-size:13px;padding:16px;"
+                "background:#fef9e7;border-bottom:1px solid #f9e79f;"
+            )
+            notice.setWordWrap(True)
+            self._fallback_label = QLabel("")
             self._fallback_label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
             self._fallback_label.setWordWrap(True)
             self._fallback_label.setStyleSheet(
-                "background:white;padding:16px;font-family:monospace;"
+                "background:white;padding:16px;font-family:monospace;font-size:12px;"
             )
+            fallback_container = QWidget()
+            fallback_vbox = QVBoxLayout(fallback_container)
+            fallback_vbox.setContentsMargins(0, 0, 0, 0)
+            fallback_vbox.addWidget(notice)
             scroll = QScrollArea()
             scroll.setWidget(self._fallback_label)
             scroll.setWidgetResizable(True)
-            splitter.addWidget(scroll)
+            fallback_vbox.addWidget(scroll, 1)
+            splitter.addWidget(fallback_container)
 
         splitter.setSizes([400, 1180])
 
