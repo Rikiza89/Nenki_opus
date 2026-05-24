@@ -43,9 +43,10 @@ from PySide6.QtWidgets import (
 )
 
 try:
-    from PySide6.QtWebEngineWidgets import QWebEngineView
+    from PySide6.QtWebEngineWidgets import QWebEngineView as _QWebEngineView
     _HAS_WEBENGINE = True
-except ImportError:
+except Exception:
+    _QWebEngineView = None  # type: ignore[assignment,misc]
     _HAS_WEBENGINE = False
 
 from memorial_app.database.db_manager import DatabaseManager, DatabaseError
@@ -227,14 +228,23 @@ class VisualEditorWindow(QMainWindow):
         self._data_tabs = QTabWidget()
         self._left_tabs.addTab(self._data_tabs, "データ編集")
 
+        webengine_ok = False
         if _HAS_WEBENGINE:
-            self._webview = QWebEngineView()
-            splitter.addWidget(self._webview)
-        else:
+            try:
+                self._webview = _QWebEngineView()
+                splitter.addWidget(self._webview)
+                webengine_ok = True
+            except Exception:
+                self._webview = None
+
+        if not webengine_ok:
+            self._webview = None
             notice = QLabel(
-                "⚠ プレビューを表示するには PySide6-WebEngine が必要です。\n\n"
-                "setup_packages.bat を再実行するとインストールされます。\n"
-                "Word/PDF出力ボタンは引き続きご利用いただけます。\n\n"
+                "⚠ HTMLプレビューを表示できません。\n\n"
+                "PySide6 付属の WebEngine が初期化できませんでした。\n"
+                "（仮想環境(venv)ではなく組み込みPythonをお使いの場合は\n"
+                "  この制限が発生することがあります。）\n\n"
+                "Word / PDF 出力ボタンは引き続きご利用いただけます。\n\n"
                 "─────────────────────────────\n"
             )
             notice.setStyleSheet(
@@ -585,7 +595,7 @@ class VisualEditorWindow(QMainWindow):
     def _do_refresh(self):
         grouped = self._build_grouped_data()
         html = build_html(grouped, self._layout)
-        if _HAS_WEBENGINE:
+        if self._webview is not None:
             self._webview.setHtml(html)
         else:
             lines = [self._layout.title, ""]

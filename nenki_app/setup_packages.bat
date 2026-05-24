@@ -91,14 +91,6 @@ if errorlevel 1 goto error
 %PIP% install "PySide6==6.6.1"
 if errorlevel 1 goto error
 
-:: WebEngine for live HTML preview in the visual editor
-%PIP% install "PySide6-WebEngine==6.6.1"
-if errorlevel 1 (
-    echo WARNING: PySide6-WebEngine install failed.
-    echo          The visual editor will fall back to plain text preview.
-    echo          This does not affect Word/PDF export.
-)
-
 :: Remaining packages
 %PIP% install SQLAlchemy openpyxl xlrd python-docx reportlab
 if errorlevel 1 goto error
