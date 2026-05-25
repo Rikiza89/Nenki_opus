@@ -6,9 +6,7 @@ from pathlib import Path
 
 # ── Embedded-Python bootstrap ──────────────────────────────────────────────
 # When deployed with a bundled Python (python/ folder alongside nenki_app/),
-# Qt's helper processes and plugins must be located BEFORE the first PySide6
-# import.  Setting these env-vars here covers both QtWebEngineProcess (so the
-# visual-editor preview works) and the general Qt plugin path.
+# Qt plugins must be on the search path before the first PySide6 import.
 _app_dir = Path(__file__).resolve().parent.parent.parent  # …/nenki_app/
 _python_dir = _app_dir.parent / "python"
 if _python_dir.exists():
@@ -18,15 +16,6 @@ if _python_dir.exists():
     _ps6 = _site / "PySide6"
     _qt_bin = _ps6 / "Qt" / "bin"
     _qt_plugins = _ps6 / "Qt" / "plugins"
-
-    # Embedded Python mode: always use the QPainter preview.
-    # QWebEngineView requires QtWebEngineProcess.exe to run as a separate child
-    # process. Even when the DLL imports cleanly, instantiating QWebEngineView
-    # on a portable/embedded setup blocks the UI thread indefinitely while Qt
-    # waits for that child process to respond. Forcing the painter preview here
-    # avoids the hang entirely.
-    os.environ["NENKI_PAINTER_PREVIEW"] = "1"
-
     if _qt_plugins.exists():
         os.environ.setdefault("QT_PLUGIN_PATH", str(_qt_plugins))
     if _qt_bin.exists():

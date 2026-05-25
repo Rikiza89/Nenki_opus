@@ -2,7 +2,7 @@
 
 Split-panel layout:
   Left  — QTabWidget with "レイアウト" and "データ編集" tabs
-  Right — Live HTML preview via QWebEngineView (falls back to plain text)
+  Right — Live preview rendered via QPainter (_PainterPreview)
 
 The window receives the already-computed anniversary results and lets the user:
   • Reorder / show / hide output fields
@@ -42,43 +42,14 @@ from PySide6.QtWidgets import (
     QGroupBox,
 )
 
-import os as _os
-from pathlib import Path as _Path
-
-# Detect embedded/portable Python: look for a python/ sibling of nenki_app/.
-# main.py sets NENKI_PAINTER_PREVIEW=1 for this case, but we also check the
-# filesystem directly as a second independent guard — both must be clear before
-# we attempt QWebEngineView, which hangs indefinitely on portable setups.
-def _is_embedded_python() -> bool:
-    try:
-        _here = _Path(__file__).resolve()
-        # …/nenki_app/memorial_app/ui/visual_editor/ → go up 4 levels → parent of nenki_app
-        _app_parent = _here.parent.parent.parent.parent.parent
-        return (_app_parent / "python").exists()
-    except Exception:
-        return False
-
-_FORCE_PAINTER = (
-    _os.environ.get("NENKI_PAINTER_PREVIEW") == "1"
-    or _is_embedded_python()
-)
-
-try:
-    if _FORCE_PAINTER:
-        raise ImportError("Painter preview forced in embedded/portable Python mode")
-    from PySide6.QtWebEngineWidgets import QWebEngineView
-    _HAS_WEBENGINE = True
-except ImportError:
-    _HAS_WEBENGINE = False
 
 
 class _PainterPreview(QWidget):
-    """Visual QPainter-based preview used when QWebEngineView is unavailable.
+    """QPainter-based live preview for the visual editor.
 
-    Renders a simplified but genuinely visual representation of the tategaki
-    document: group headers in a shaded band, entries listed below, right-to-left
-    column order, with a 「簡易プレビュー」 watermark so users know it is not the
-    exact final layout.
+    Renders group headers in a shaded band with entries listed below, matching
+    the structure of the generated Word/PDF document without depending on any
+    web engine component.
     """
 
     def __init__(self, parent=None):
@@ -171,7 +142,7 @@ class _PainterPreview(QWidget):
         painter.drawText(
             self.rect().adjusted(0, 0, -6, -6),
             Qt.AlignBottom | Qt.AlignRight,
-            "簡易プレビュー（WebEngineなし）",
+            "プレビュー",
         )
         painter.end()
 
@@ -182,7 +153,7 @@ from memorial_app.core.date_converter import (
     format_year_kanji_era,
 )
 from memorial_app.core.nenki_calculator import STANDARD_NENKI
-from memorial_app.ui.visual_editor.preview_renderer import LayoutSettings, build_html
+from memorial_app.ui.visual_editor.preview_renderer import LayoutSettings
 
 # Built-in display fields available in results (not EAV)
 _BUILTIN_FIELDS = [
@@ -354,15 +325,11 @@ class VisualEditorWindow(QMainWindow):
         self._data_tabs = QTabWidget()
         self._left_tabs.addTab(self._data_tabs, "データ編集")
 
-        if _HAS_WEBENGINE:
-            self._webview = QWebEngineView()
-            splitter.addWidget(self._webview)
-        else:
-            self._painter_preview = _PainterPreview()
-            scroll = QScrollArea()
-            scroll.setWidget(self._painter_preview)
-            scroll.setWidgetResizable(True)
-            splitter.addWidget(scroll)
+        self._painter_preview = _PainterPreview()
+        scroll = QScrollArea()
+        scroll.setWidget(self._painter_preview)
+        scroll.setWidgetResizable(True)
+        splitter.addWidget(scroll)
 
         splitter.setSizes([400, 1180])
 
@@ -690,11 +657,7 @@ class VisualEditorWindow(QMainWindow):
 
     def _do_refresh(self):
         grouped = self._build_grouped_data()
-        if _HAS_WEBENGINE:
-            html = build_html(grouped, self._layout)
-            self._webview.setHtml(html)
-        else:
-            self._painter_preview.update_content(grouped, self._layout)
+        self._painter_preview.update_content(grouped, self._layout)
 
     # ------------------------------------------------------------------ #
     # Export                                                               #
