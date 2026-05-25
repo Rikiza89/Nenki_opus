@@ -43,16 +43,29 @@ from PySide6.QtWidgets import (
 )
 
 import os as _os
+from pathlib import Path as _Path
 
-# In embedded-Python deployments the QtWebEngineWidgets DLL may load fine but
-# QWebEngineView() will hang waiting for QtWebEngineProcess to start.
-# main.py sets NENKI_PAINTER_PREVIEW=1 whenever it detects that
-# QtWebEngineProcess is missing, so we skip the web engine entirely in that case.
-_FORCE_PAINTER = _os.environ.get("NENKI_PAINTER_PREVIEW") == "1"
+# Detect embedded/portable Python: look for a python/ sibling of nenki_app/.
+# main.py sets NENKI_PAINTER_PREVIEW=1 for this case, but we also check the
+# filesystem directly as a second independent guard — both must be clear before
+# we attempt QWebEngineView, which hangs indefinitely on portable setups.
+def _is_embedded_python() -> bool:
+    try:
+        _here = _Path(__file__).resolve()
+        # …/nenki_app/memorial_app/ui/visual_editor/ → go up 4 levels → parent of nenki_app
+        _app_parent = _here.parent.parent.parent.parent.parent
+        return (_app_parent / "python").exists()
+    except Exception:
+        return False
+
+_FORCE_PAINTER = (
+    _os.environ.get("NENKI_PAINTER_PREVIEW") == "1"
+    or _is_embedded_python()
+)
 
 try:
     if _FORCE_PAINTER:
-        raise ImportError("Painter preview forced — embedded Python without QtWebEngineProcess")
+        raise ImportError("Painter preview forced in embedded/portable Python mode")
     from PySide6.QtWebEngineWidgets import QWebEngineView
     _HAS_WEBENGINE = True
 except ImportError:
