@@ -18,10 +18,21 @@ if _python_dir.exists():
     _ps6 = _site / "PySide6"
     _qt_bin = _ps6 / "Qt" / "bin"
     _qt_plugins = _ps6 / "Qt" / "plugins"
+
+    # Try to locate QtWebEngineProcess so Qt can launch it.
+    # If it is NOT found, we force the painter preview to avoid a UI freeze:
+    # the DLL import may succeed but instantiating QWebEngineView will hang
+    # indefinitely if QtWebEngineProcess cannot be launched as a child process.
+    _webengine_ok = False
     for _proc in (_qt_bin / "QtWebEngineProcess.exe", _qt_bin / "QtWebEngineProcess"):
         if _proc.exists():
             os.environ.setdefault("QTWEBENGINEPROCESS_PATH", str(_proc))
+            _webengine_ok = True
             break
+    if not _webengine_ok:
+        # Signal to visual_editor_window that it must use the painter fallback.
+        os.environ["NENKI_PAINTER_PREVIEW"] = "1"
+
     if _qt_plugins.exists():
         os.environ.setdefault("QT_PLUGIN_PATH", str(_qt_plugins))
     if _qt_bin.exists():

@@ -42,7 +42,17 @@ from PySide6.QtWidgets import (
     QGroupBox,
 )
 
+import os as _os
+
+# In embedded-Python deployments the QtWebEngineWidgets DLL may load fine but
+# QWebEngineView() will hang waiting for QtWebEngineProcess to start.
+# main.py sets NENKI_PAINTER_PREVIEW=1 whenever it detects that
+# QtWebEngineProcess is missing, so we skip the web engine entirely in that case.
+_FORCE_PAINTER = _os.environ.get("NENKI_PAINTER_PREVIEW") == "1"
+
 try:
+    if _FORCE_PAINTER:
+        raise ImportError("Painter preview forced — embedded Python without QtWebEngineProcess")
     from PySide6.QtWebEngineWidgets import QWebEngineView
     _HAS_WEBENGINE = True
 except ImportError:
